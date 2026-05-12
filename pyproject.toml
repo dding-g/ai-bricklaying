@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-bricklaying"
+version = "0.1.0"
+description = "Prompt-based CLI for creating AI session summary skill briefs."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "ai-bricklaying contributors" }]
+dependencies = []
+
+[project.scripts]
+ai-bricklaying = "ai_bricklaying.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ai_bricklaying*"]

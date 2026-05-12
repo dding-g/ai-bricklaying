@@ -1,0 +1,51 @@
+{
+  "name": "ai-bricklaying",
+  "version": "0.1.0",
+  "description": "CLI for turning AI coding session history into compound-engineering summaries and reusable skills",
+  "keywords": [
+    "ai",
+    "cli",
+    "tui",
+    "opencode",
+    "claude-code",
+    "codex",
+    "cursor",
+    "github-copilot",
+    "compound-engineering",
+    "developer-tools"
+  ],
+  "author": "ai-bricklaying contributors",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "ai-bricklaying": "./bin/ai-bricklaying.js"
+  },
+  "files": [
+    "ai_bricklaying/__init__.py",
+    "ai_bricklaying/cli.py",
+    "ai_bricklaying/models.py",
+    "ai_bricklaying/session_sources.py",
+    "ai_bricklaying/skill_writer.py",
+    "ai_bricklaying/summarizer.py",
+    "ai_bricklaying/template.py",
+    "ai_bricklaying/tui.py",
+    "assets/ai-bricklaying.png",
+    "bin/ai-bricklaying.js",
+    "README.md",
+    "pyproject.toml"
+  ],
+  "scripts": {
+    "test": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests",
+    "pack:dry-run": "npm pack --dry-run --json"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ]
+}
