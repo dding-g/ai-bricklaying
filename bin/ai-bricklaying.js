@@ -109,6 +109,7 @@ function expandHome(value) {
 
 function parseArgs(argv) {
   const args = {
+    provided: new Set(),
     nonInteractive: false,
     targetModel: 'configured model',
     language: 'English',
@@ -147,6 +148,7 @@ function parseArgs(argv) {
     }
     if (flag === '--non-interactive') {
       args.nonInteractive = true;
+      args.provided.add('nonInteractive');
       continue;
     }
     const key = keyMap[flag];
@@ -158,8 +160,42 @@ function parseArgs(argv) {
       throw new CliError(`${flag} requires a value`);
     }
     args[key] = value;
+    args.provided.add(key);
     if (inlineValue === undefined) index += 1;
   }
+  return args;
+}
+
+function readConfigFile(configDir) {
+  const filePath = path.join(path.resolve(expandHome(configDir)), 'config.json');
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    throw new CliError(`Could not read config file ${filePath}: ${error.message}`);
+  }
+}
+
+function applyConfigDefaults(args, storedConfig) {
+  const delivery = storedConfig.delivery || {};
+  const defaults = storedConfig.defaults || {};
+  const provided = args.provided;
+
+  if (!provided.has('targetAgent') && Array.isArray(defaults.target_agents) && defaults.target_agents.length) {
+    args.targetAgent = defaults.target_agents.join(',');
+  }
+  if (!provided.has('sources') && defaults.source) args.sources = defaults.source;
+  if (!provided.has('targetModel') && defaults.target_model) args.targetModel = defaults.target_model;
+  if (!provided.has('language') && defaults.language) args.language = defaults.language;
+  if (!provided.has('outputModes') && Array.isArray(defaults.output_modes) && defaults.output_modes.length) {
+    args.outputModes = defaults.output_modes.join(',');
+  }
+  if (!provided.has('skillName') && defaults.skill_name) args.skillName = defaults.skill_name;
+  if (!provided.has('skillDir') && defaults.skill_dir) args.skillDir = defaults.skill_dir;
+  if (!provided.has('outputDir') && defaults.output_dir) args.outputDir = defaults.output_dir;
+  if (!provided.has('gmailRecipient') && delivery.gmail_recipient) args.gmailRecipient = delivery.gmail_recipient;
+  if (!provided.has('gmailSubject') && delivery.gmail_subject) args.gmailSubject = delivery.gmail_subject;
+  if (!provided.has('slackWebhookUrl') && delivery.slack_webhook_url) args.slackWebhookUrl = delivery.slack_webhook_url;
   return args;
 }
 
@@ -214,6 +250,13 @@ function outputModeKey(value) {
   return { gmail: 'gmail-mcp', slack: 'slack-webhook' }[value] || value;
 }
 
+function outputModesFromValue(value) {
+  const modes = new Set(['file', ...csv(value).map(outputModeKey)]);
+  const unknown = [...modes].filter((mode) => !OUTPUT_MODES.includes(mode)).sort();
+  if (unknown.length) throw new CliError(`Unknown output mode(s): ${unknown.join(', ')}`);
+  return OUTPUT_MODES.filter((mode) => modes.has(mode));
+}
+
 function targetsFromArgs(args) {
   const keys = csv(args.targetAgent || 'opencode');
   const unknown = keys.filter((key) => !TARGET_BY_KEY.has(key));
@@ -251,9 +294,7 @@ function sourcesFromArgs(args, targets) {
 }
 
 function outputModesFromArgs(args) {
-  const modes = new Set(['file', ...csv(args.outputModes).map(outputModeKey)]);
-  const unknown = [...modes].filter((mode) => !OUTPUT_MODES.includes(mode)).sort();
-  if (unknown.length) throw new CliError(`Unknown output mode(s): ${unknown.join(', ')}`);
+  const modes = new Set(outputModesFromValue(args.outputModes));
   if (modes.has('gmail-mcp') && (!args.gmailRecipient || !args.gmailSubject)) {
     throw new CliError('gmail-mcp requires --gmail-recipient and --gmail-subject');
   }
@@ -284,6 +325,12 @@ async function prompt(question, defaultValue) {
   const answer = await new Promise((resolve) => rl.question(`${question}${suffix}: `, resolve));
   rl.close();
   return answer.trim() || defaultValue || '';
+}
+
+async function promptConfiguredSecret(question, currentValue) {
+  const answer = await prompt(question, currentValue ? 'configured' : undefined);
+  if (answer === 'configured') return currentValue || null;
+  return answer || null;
 }
 
 function printIntro() {
@@ -328,26 +375,29 @@ async function chooseOneLineMode(title, options, label) {
   }
 }
 
-async function chooseMany(title, options, label = (option) => option.label, promptLabel = 'Selection') {
+async function chooseMany(title, options, label = (option) => option.label, promptLabel = 'Selection', selectedIndexes = options.map((_option, index) => index)) {
   if (canUseWizard()) {
     return runSelectionWizard({
       title,
       options,
       label,
       multiple: true,
-      selectedIndexes: options.map((_option, index) => index),
+      selectedIndexes,
     });
   }
-  return chooseManyLineMode(title, options, label, promptLabel);
+  return chooseManyLineMode(title, options, label, promptLabel, selectedIndexes);
 }
 
-async function chooseManyLineMode(title, options, label = (option) => option.label, promptLabel = 'Selection') {
+async function chooseManyLineMode(title, options, label = (option) => option.label, promptLabel = 'Selection', selectedIndexes = options.map((_option, index) => index)) {
+  const defaultIndexes = selectedIndexes.length ? selectedIndexes : options.map((_option, index) => index);
+  const defaultAnswer = defaultIndexes.length === options.length ? 'all' : defaultIndexes.map((index) => index + 1).join(',');
   console.log(`\n${color.cyan(title)}`);
   options.forEach((option, index) => {
-    console.log(`  ${index + 1}. [x] ${label(option)}`);
+    const marker = defaultIndexes.includes(index) ? '[x]' : '[ ]';
+    console.log(`  ${index + 1}. ${marker} ${label(option)}`);
   });
   console.log(color.muted('Tip: leave blank for all, or enter comma-separated numbers like 1,3,5.'));
-  const answer = await prompt(promptLabel, 'all');
+  const answer = await prompt(promptLabel, defaultAnswer);
   if (answer.toLowerCase() === 'all') return options;
   const selected = [];
   for (const part of answer.split(',')) {
@@ -359,36 +409,39 @@ async function chooseManyLineMode(title, options, label = (option) => option.lab
   return selected.length ? selected : options;
 }
 
-async function chooseOutputModes() {
+async function chooseOutputModes(defaultModes = ['file']) {
   const options = [
     { mode: 'file', label: 'File save (always enabled)', fixed: true },
     { mode: 'gmail-mcp', label: 'Gmail MCP delivery notes' },
     { mode: 'slack-webhook', label: 'Slack webhook config' },
   ];
+  const defaultIndexes = options
+    .map((option, index) => defaultModes.includes(option.mode) ? index : null)
+    .filter((index) => index !== null);
   if (canUseWizard()) {
     const selected = await runSelectionWizard({
       title: '5. Select output modes',
       options,
       label: (option) => option.label,
       multiple: true,
-      selectedIndexes: [0],
+      selectedIndexes: defaultIndexes.length ? defaultIndexes : [0],
       fixedIndexes: [0],
     });
     const modes = new Set(selected.map((option) => option.mode));
     modes.add('file');
     return OUTPUT_MODES.filter((mode) => modes.has(mode));
   }
-  return chooseOutputModesLineMode(options);
+  return chooseOutputModesLineMode(options, defaultIndexes.length ? defaultIndexes : [0]);
 }
 
-async function chooseOutputModesLineMode(options) {
+async function chooseOutputModesLineMode(options, defaultIndexes = [0]) {
   console.log(`\n${color.cyan('5. Select output modes')}`);
   options.forEach((option, index) => {
-    const marker = option.fixed ? '[x]' : '[ ]';
+    const marker = option.fixed || defaultIndexes.includes(index) ? '[x]' : '[ ]';
     const fixed = option.fixed ? ' - required' : '';
     console.log(`  ${index + 1}. ${marker} ${option.label}${fixed}`);
   });
-  const answer = await prompt('Optional modes', '1');
+  const answer = await prompt('Optional modes', defaultIndexes.map((index) => index + 1).join(','));
   const modes = new Set(['file']);
   if (answer.includes('2')) modes.add('gmail-mcp');
   if (answer.includes('3')) modes.add('slack-webhook');
@@ -783,7 +836,27 @@ function configPath(config) {
 function writeConfigFile(config) {
   const filePath = configPath(config);
   ensurePrivateDir(path.dirname(filePath));
-  writeFileSafely(filePath, `${JSON.stringify({ delivery: { slack_webhook_url: config.slackWebhookUrl || null } }, null, 2)}\n`, 0o600);
+  const sharedSkillDir = config.targets.length && config.targets.every((target) => target.defaultSkillDir === config.targets[0].defaultSkillDir)
+    ? config.targets[0].defaultSkillDir
+    : null;
+  const payload = {
+    delivery: {
+      gmail_recipient: config.gmailRecipient || null,
+      gmail_subject: config.gmailSubject || null,
+      slack_webhook_url: config.slackWebhookUrl || null,
+    },
+    defaults: {
+      target_agents: config.targets.map((target) => slug(target.name)),
+      source: config.selectedSources[0] ? config.selectedSources[0].key : null,
+      target_model: config.target.modelHint,
+      language: config.language,
+      output_modes: config.outputModes,
+      skill_name: config.skillName,
+      skill_dir: sharedSkillDir,
+      output_dir: config.outputDir,
+    },
+  };
+  writeFileSafely(filePath, `${JSON.stringify(payload, null, 2)}\n`, 0o600);
   return filePath;
 }
 
@@ -873,6 +946,7 @@ async function run(argv) {
     printHelp();
     return 0;
   }
+  applyConfigDefaults(args, readConfigFile(args.configDir));
 
   let targets;
   let sources;
@@ -887,24 +961,31 @@ async function run(argv) {
     outputModes = outputModesFromArgs(args);
   } else {
     printIntro();
+    const targetKeys = csv(args.targetAgent);
+    const targetDefaultIndexes = targetKeys.length
+      ? AGENT_TARGETS
+        .map((target, index) => targetKeys.includes(slug(target.name)) ? index : null)
+        .filter((index) => index !== null)
+      : AGENT_TARGETS.map((_target, index) => index);
     targets = await chooseMany(
       '1. Select AI agent/model targets for generated skills',
       AGENT_TARGETS,
       (item) => `${item.name} - ${item.defaultSkillDir}`,
-      'Skill targets'
+      'Skill targets',
+      targetDefaultIndexes
     );
     targets = targets.map((target) => ({ ...target, modelHint: args.targetModel }));
     sources = [await chooseOne('2. Select one AI agent whose sessions should be summarized', sourceOptionsForTargets(targets), (item) => item.label)];
     args.language = await prompt('\n3. Result language', args.language);
     args.outputDir = await prompt('4. File save directory', args.outputDir);
     console.log(color.muted('\n5. Default summary template will be embedded in English and instructed to output your chosen language.'));
-    outputModes = await chooseOutputModes();
+    outputModes = await chooseOutputModes(outputModesFromValue(args.outputModes));
     if (outputModes.includes('gmail-mcp')) {
-      gmailRecipient = await prompt('Gmail MCP recipient (optional)') || null;
-      gmailSubject = await prompt('Gmail MCP subject (optional)') || null;
+      gmailRecipient = await prompt('Gmail MCP recipient (optional)', gmailRecipient || undefined) || null;
+      gmailSubject = await prompt('Gmail MCP subject (optional)', gmailSubject || undefined) || null;
     }
     if (outputModes.includes('slack-webhook')) {
-      slackWebhookUrl = await prompt('Slack webhook URL (optional)') || null;
+      slackWebhookUrl = await promptConfiguredSecret('Slack webhook URL (optional)', slackWebhookUrl);
     }
   }
 

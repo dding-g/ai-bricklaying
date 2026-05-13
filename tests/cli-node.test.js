@@ -91,6 +91,67 @@ function run(args, options = {}) {
   assert.strictEqual(result.stdout.includes('\u001b['), false, 'NO_COLOR should suppress ANSI output');
 })();
 
+(function testExistingConfigProvidesNonInteractiveDefaults() {
+  const root = tempRoot();
+  const outputDir = path.join(root, 'configured-out');
+  const skillDir = path.join(root, 'configured-skills');
+  const configDir = path.join(root, 'config');
+  fs.mkdirSync(configDir);
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({
+    delivery: {
+      gmail_recipient: 'saved@example.com',
+      gmail_subject: 'Saved subject',
+      slack_webhook_url: 'https://hooks.slack.com/services/T000/B000/saved',
+    },
+    defaults: {
+      target_agents: ['opencode'],
+      source: 'opencode',
+      language: 'Korean',
+      output_modes: ['file', 'gmail-mcp', 'slack-webhook'],
+      skill_name: 'saved-session-summary',
+      skill_dir: skillDir,
+      output_dir: outputDir,
+    },
+  }, null, 2));
+
+  const result = run(['--non-interactive', '--config-dir', configDir]);
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(summaryPath(outputDir)));
+  assert.ok(fs.existsSync(path.join(outputDir, 'ai-bricklaying-slack-payload.json')));
+  assert.ok(fs.existsSync(path.join(skillDir, 'saved-session-summary', 'SKILL.md')));
+  const summary = fs.readFileSync(summaryPath(outputDir), 'utf8');
+  assert.ok(summary.includes('Language: Korean'));
+  assert.ok(summary.includes('Gmail MCP: prepare an email draft for saved@example.com with subject Saved subject'));
+  assert.ok(summary.includes('Slack webhook URL: configured'));
+})();
+
+(function testInteractiveConfigDefaultsDoNotPrintSlackSecret() {
+  const root = tempRoot();
+  const outputDir = path.join(root, 'configured-out');
+  const skillDir = path.join(root, 'configured-skills');
+  const configDir = path.join(root, 'config');
+  const webhook = 'https://hooks.slack.com/services/T000/B000/saved';
+  fs.mkdirSync(configDir);
+  fs.writeFileSync(path.join(configDir, 'config.json'), JSON.stringify({
+    delivery: { slack_webhook_url: webhook },
+    defaults: {
+      target_agents: ['opencode'],
+      source: 'opencode',
+      output_modes: ['file', 'slack-webhook'],
+      skill_dir: skillDir,
+      output_dir: outputDir,
+    },
+  }, null, 2));
+
+  const result = run(['--config-dir', configDir], { input: '\n\n\n\n\n\n' });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.ok(result.stdout.includes('Slack webhook URL (optional) [configured]'));
+  assert.strictEqual(result.stdout.includes(webhook), false);
+  assert.ok(fs.existsSync(path.join(outputDir, 'ai-bricklaying-slack-payload.json')));
+})();
+
 (function testMultipleSkillTargetsWithSingleSummarySource() {
   const root = tempRoot();
   const outputDir = path.join(root, 'out');
