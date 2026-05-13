@@ -35,7 +35,7 @@ Default session sources: {source_names or "none selected"}.
 2. Identify actual work completed, decisions made, verification evidence, failed attempts, and reusable lessons.
 3. Write the result in {config.language}.
 4. Save a markdown file even if the user also asks to send the result through Gmail or Slack.
-5. If Gmail MCP or Slack MCP delivery is requested, prepare the message through the available MCP integration and clearly report any missing recipient, channel, or authorization.
+5. If Gmail MCP or Slack webhook delivery is requested, prepare the message using the saved configuration and clearly report any missing recipient, webhook URL, or authorization.
 
 ## Summary Template
 

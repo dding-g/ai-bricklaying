@@ -19,8 +19,9 @@ def _slug(value: str) -> str:
 
 TARGET_BY_KEY = {_slug(target.name): target for target in AGENT_TARGETS}
 SOURCE_BY_KEY = {source.key: source for source in SESSION_SOURCES}
-OUTPUT_MODES = ("file", "gmail-mcp", "slack-mcp")
+OUTPUT_MODES = ("file", "gmail-mcp", "slack-webhook")
 SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+DEFAULT_CONFIG_DIR = Path.home() / ".config" / "ai-bricklaying"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,14 +42,14 @@ def _run(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-model", default="configured model", help="Model label to record in generated artifacts.")
     parser.add_argument("--sources", "--sessions", dest="sources", help="Comma-separated session sources to summarize: opencode, claude-code, codex, cursor, github-copilot.")
     parser.add_argument("--language", default="English", help="Language for the generated summary.")
-    parser.add_argument("--output-modes", "--delivery", dest="output_modes", default="file", help="Comma-separated delivery modes: file, gmail-mcp, slack-mcp.")
+    parser.add_argument("--output-modes", "--delivery", dest="output_modes", default="file", help="Comma-separated delivery modes: file, gmail-mcp, slack-webhook.")
     parser.add_argument("--skill-name", default="daily-ai-session-summary", help="Generated skill directory name.")
     parser.add_argument("--skill-dir", help="Directory where the generated skill folder should be written.")
     parser.add_argument("--output-dir", default="summaries", help="Directory for generated summary files.")
     parser.add_argument("--gmail-recipient", "--gmail-to", dest="gmail_recipient", help="Gmail MCP recipient to record in delivery notes.")
     parser.add_argument("--gmail-subject", help="Gmail MCP subject to record in delivery notes.")
-    parser.add_argument("--slack-channel", help="Slack MCP channel to record in delivery notes.")
-    parser.add_argument("--slack-thread", help="Optional Slack MCP thread timestamp to record in delivery notes.")
+    parser.add_argument("--slack-webhook-url", help="Slack incoming webhook URL to save in the local ai-bricklaying config.")
+    parser.add_argument("--config-dir", default=str(DEFAULT_CONFIG_DIR), help="Directory for ai-bricklaying config files.")
     args = parser.parse_args(argv)
 
     if args.non_interactive:
@@ -57,8 +58,7 @@ def _run(argv: list[str] | None = None) -> int:
         output_modes = _output_modes_from_args(args)
         gmail_recipient = args.gmail_recipient
         gmail_subject = args.gmail_subject
-        slack_channel = args.slack_channel
-        slack_thread = args.slack_thread
+        slack_webhook_url = args.slack_webhook_url
     else:
         target = choose_one("1. Select AI agent/model target for the generated skill", AGENT_TARGETS, lambda item: f"{item.name} - {item.default_skill_dir}")
         sources = choose_many("2. Select AI agents whose sessions should be summarized")
@@ -68,8 +68,7 @@ def _run(argv: list[str] | None = None) -> int:
         output_modes = _choose_output_modes()
         gmail_recipient = input("Gmail MCP recipient (optional): ").strip() or None if "gmail-mcp" in output_modes else None
         gmail_subject = input("Gmail MCP subject (optional): ").strip() or None if "gmail-mcp" in output_modes else None
-        slack_channel = input("Slack MCP channel (optional): ").strip() or None if "slack-mcp" in output_modes else None
-        slack_thread = input("Slack MCP thread timestamp (optional): ").strip() or None if "slack-mcp" in output_modes else None
+        slack_webhook_url = input("Slack webhook URL (optional): ").strip() or None if "slack-webhook" in output_modes else None
 
     if args.skill_dir:
         target = replace(target, default_skill_dir=Path(args.skill_dir))
@@ -84,8 +83,8 @@ def _run(argv: list[str] | None = None) -> int:
         output_dir=Path(args.output_dir),
         gmail_recipient=gmail_recipient,
         gmail_subject=gmail_subject,
-        slack_channel=slack_channel,
-        slack_thread=slack_thread,
+        slack_webhook_url=slack_webhook_url,
+        config_dir=Path(args.config_dir).expanduser(),
     )
     records = []
     for source in sources:
@@ -93,15 +92,19 @@ def _run(argv: list[str] | None = None) -> int:
     summary = build_summary(config, records)
     summary_path = write_summary_file(config, summary)
     metadata_path = write_metadata_file(config, summary_path, len(records))
+    config_path = write_config_file(config)
     skill_path = write_skill(config)
 
     print(f"\nSaved summary: {summary_path}")
     print(f"Saved metadata: {metadata_path}")
+    print(f"Saved config: {config_path}")
     print(f"Saved skill: {skill_path}")
+    if config.target.name == "OpenCode":
+        print("OpenCode loads skills when a session starts. Restart OpenCode or open a new session if the skill is not visible yet.")
     if "gmail-mcp" in output_modes:
         print("Gmail delivery selected: use your Gmail MCP to send the saved markdown content.")
-    if "slack-mcp" in output_modes:
-        print("Slack delivery selected: use your Slack MCP to post the saved markdown content.")
+    if "slack-webhook" in output_modes:
+        print("Slack webhook delivery selected: use the saved config file to post the markdown content.")
     return 0
 
 
@@ -119,24 +122,41 @@ def write_metadata_file(config: SummaryConfig, summary_path: Path, session_count
         "session_count": session_count,
         "gmail_recipient": config.gmail_recipient,
         "gmail_subject": config.gmail_subject,
-        "slack_channel": config.slack_channel,
-        "slack_thread": config.slack_thread,
+        "config_path": str(_config_path(config)),
+        "slack_webhook_configured": bool(config.slack_webhook_url),
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     return path
+
+
+def write_config_file(config: SummaryConfig) -> Path:
+    path = _config_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "delivery": {
+            "slack_webhook_url": config.slack_webhook_url,
+        }
+    }
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _config_path(config: SummaryConfig) -> Path:
+    config_dir = config.config_dir or DEFAULT_CONFIG_DIR
+    return config_dir / "config.json"
 
 
 def _choose_output_modes() -> tuple[str, ...]:
     print("\n5. Select output modes. File save is always enabled.")
     print("  1. only file save")
     print("  2. Gmail MCP")
-    print("  3. Slack MCP")
+    print("  3. Slack webhook")
     answer = input("Select comma-separated numbers [1]: ").strip()
     modes = {"file"}
     if "2" in answer:
         modes.add("gmail-mcp")
     if "3" in answer:
-        modes.add("slack-mcp")
+        modes.add("slack-webhook")
     return tuple(sorted(modes))
 
 
@@ -169,8 +189,8 @@ def _output_modes_from_args(args: argparse.Namespace) -> tuple[str, ...]:
         raise SystemExit(f"Unknown output mode(s): {', '.join(unknown)}")
     if "gmail-mcp" in modes and (not args.gmail_recipient or not args.gmail_subject):
         raise SystemExit("gmail-mcp requires --gmail-recipient and --gmail-subject")
-    if "slack-mcp" in modes and not args.slack_channel:
-        raise SystemExit("slack-mcp requires --slack-channel")
+    if "slack-webhook" in modes and not args.slack_webhook_url:
+        raise SystemExit("slack-webhook requires --slack-webhook-url")
     return tuple(mode for mode in OUTPUT_MODES if mode in modes)
 
 
@@ -179,7 +199,7 @@ def _source_key(value: str) -> str:
 
 
 def _output_mode_key(value: str) -> str:
-    aliases = {"gmail": "gmail-mcp", "slack": "slack-mcp"}
+    aliases = {"gmail": "gmail-mcp", "slack": "slack-webhook"}
     return aliases.get(value, value)
 
 

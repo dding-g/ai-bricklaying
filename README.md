@@ -1,16 +1,18 @@
 # ai-bricklaying
 
-![ai-bricklaying logo](assets/ai-bricklaying.png)
+<p align="center">
+  <img src="assets/ai-bricklaying.png" alt="drawing" style="width:400px;"/>
+</p>
 
-`ai-bricklaying` is a small prompt-based CLI for creating a reusable AI session summary skill brief. It guides the user through English prompts, lets the user choose the result language, saves a Markdown skill file, and records optional Gmail MCP or Slack MCP delivery details.
+`ai-bricklaying` is a small prompt-based CLI for creating a reusable AI session summary skill brief. It guides the user through English prompts, lets the user choose the result language, saves a Markdown skill file, and records optional Gmail MCP or Slack webhook delivery details.
 
 ## What The CLI Collects
 
-- Target AI agent/model where the generated skill should be saved.
-- AI agents whose sessions should be summarized: OpenCode, Claude Code, Codex, Cursor, GitHub Copilot.
+- Target AI agents/models where generated skills should be saved. Multiple targets can be selected.
+- One AI agent whose sessions should be summarized: OpenCode, Claude Code, Codex, Cursor, GitHub Copilot.
 - Result language for the summary output.
 - A default English summary template focused on work done, learnings, results, improvements, and compound engineering philosophy.
-- Delivery choices: file save is always enabled; Gmail MCP and Slack MCP are optional.
+- Delivery choices: file save is always enabled; Gmail MCP and Slack webhook are optional.
 - Integration details needed for selected optional delivery channels.
 
 ## Install From npm
@@ -26,45 +28,41 @@ Or run without installing:
 npx ai-bricklaying --help
 ```
 
-The npm package is a thin Node.js launcher around the same Python stdlib CLI. It requires Python 3.10+ to be available as `python3`, `python`, or through `PYTHON=/path/to/python`.
+The npm package now runs through a native dependency-free Node.js CLI. The Python package remains available for Python development and tests, but npm users no longer need Python at runtime.
 
-## Run From Source
+## Run Locally
 
-```bash
-python3 -m ai_bricklaying.cli --help
-```
-
-For editable install with the console script:
+Use the Node/npm entrypoint for local CLI usage:
 
 ```bash
-python3 -m pip install -e .
-ai-bricklaying --help
+node bin/ai-bricklaying.js --help
 ```
 
 ## Interactive Flow
 
 ```bash
-python3 -m ai_bricklaying.cli
+ai-bricklaying
 ```
 
-The CLI asks each question in English with Korean context, then writes:
+The CLI uses a terminal-first wizard with checkbox-style choices, keyboard navigation in TTY sessions, comma-separated fallback prompts when piped, `NO_COLOR` support, and no ANSI color when output is redirected. It writes:
 
 - `ai-bricklaying-summary-skill.md` in the selected output directory.
 - `ai-bricklaying-summary-skill.json` metadata in the selected output directory.
+- `ai-bricklaying-slack-payload.json` Slack mrkdwn payload when Slack webhook delivery is selected.
 - `SKILL.md` inside `<selected skill directory>/<skill-name>/`.
 
 ## Non-Interactive Example
 
 ```bash
-python3 -m ai_bricklaying.cli \
+ai-bricklaying \
   --non-interactive \
-  --target-agent opencode \
-  --sources opencode,claude-code,codex \
+  --target-agent opencode,codex \
+  --sources opencode \
   --language Korean \
-  --output-modes gmail-mcp,slack-mcp \
+  --output-modes gmail-mcp,slack-webhook \
   --gmail-recipient team@example.com \
   --gmail-subject "AI session summary" \
-  --slack-channel "#engineering" \
+  --slack-webhook-url "https://hooks.slack.com/services/..." \
   --output-dir /tmp/ai-bricklaying-demo/out \
   --skill-dir /tmp/ai-bricklaying-demo/skills
 ```
@@ -75,13 +73,43 @@ The same flags work through npm:
 npx ai-bricklaying --non-interactive --output-dir /tmp/ai-bricklaying-demo/out --skill-dir /tmp/ai-bricklaying-demo/skills
 ```
 
+For non-interactive runs, `--target-agent` accepts a comma-separated list of skill targets, while `--sources` accepts exactly one summary source.
+
+To install the generated skill into OpenCode, point `--skill-dir` at OpenCode's user skills directory:
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent opencode \
+  --sources opencode \
+  --language Korean \
+  --skill-name daily-ai-session-summary \
+  --skill-dir ~/.config/opencode/skills
+```
+
+After this runs, the skill file should exist at `~/.config/opencode/skills/daily-ai-session-summary/SKILL.md`.
+
 `--skill-name` must be a path-safe lowercase slug. This keeps generated skills under the selected `--skill-dir`.
+
+The Slack webhook URL is saved in `~/.config/ai-bricklaying/config.json` by default. Use `--config-dir` to override that location in tests or automation.
+
+When Slack webhook delivery is selected, the CLI also writes `ai-bricklaying-slack-payload.json` using Slack `mrkdwn` and blocks. Section names are highlighted with Slack bold syntax such as `*Work Completed*`, and skill names are formatted as inline code.
+
+When the target agent is OpenCode, the generated skill is saved under the selected OpenCode skills directory. OpenCode loads skills at session startup, so restart OpenCode or open a new session if the skill does not appear immediately.
+
+For npm development, run the native Node CLI directly:
+
+```bash
+node bin/ai-bricklaying.js --help
+```
+
+For Python development, the Python module can still be run with `python3 -m ai_bricklaying.cli`.
 
 ## Test
 
 ```bash
-python3 -m unittest discover -s tests
+npm test
 npm pack --dry-run --json
 ```
 
-The project intentionally uses only the Python standard library for the CLI and tests.
+The npm CLI is dependency-free Node.js. The Python package and tests intentionally continue to use only the Python standard library.

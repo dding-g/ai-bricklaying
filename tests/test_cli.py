@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_bricklaying.cli import main
 
@@ -13,33 +14,34 @@ class CliTests(unittest.TestCase):
             skill_dir = root / "skills"
             skill_name = "test-ai-session-summary"
 
-            exit_code = main(
-                [
-                    "--non-interactive",
-                    "--target-agent",
-                    "opencode",
-                    "--sources",
-                    "opencode,claude-code,codex",
-                    "--language",
-                    "Korean",
-                    "--output-modes",
-                    "gmail-mcp,slack-mcp",
-                    "--gmail-recipient",
-                    "team@example.com",
-                    "--gmail-subject",
-                    "AI session summary",
-                    "--slack-channel",
-                    "#engineering",
-                    "--slack-thread",
-                    "123.456",
-                    "--skill-name",
-                    skill_name,
-                    "--output-dir",
-                    str(output_dir),
-                    "--skill-dir",
-                    str(skill_dir),
-                ]
-            )
+            with patch("builtins.print") as printed:
+                exit_code = main(
+                    [
+                        "--non-interactive",
+                        "--target-agent",
+                        "opencode",
+                        "--sources",
+                        "opencode,claude-code,codex",
+                        "--language",
+                        "Korean",
+                        "--output-modes",
+                        "gmail-mcp,slack-webhook",
+                        "--gmail-recipient",
+                        "team@example.com",
+                        "--gmail-subject",
+                        "AI session summary",
+                        "--slack-webhook-url",
+                        "https://hooks.slack.com/services/T000/B000/secret",
+                        "--skill-name",
+                        skill_name,
+                        "--output-dir",
+                        str(output_dir),
+                        "--skill-dir",
+                        str(skill_dir),
+                        "--config-dir",
+                        str(root / "config"),
+                    ]
+                )
 
             self.assertEqual(exit_code, 0)
             summary_path = output_dir / "ai-bricklaying-summary-skill.md"
@@ -48,17 +50,22 @@ class CliTests(unittest.TestCase):
             self.assertTrue(summary_path.exists())
             self.assertTrue(metadata_path.exists())
             self.assertTrue(skill_path.exists())
+            config_path = root / "config" / "config.json"
+            self.assertTrue(config_path.exists())
             self.assertFalse((Path.home() / f".config/opencode/skills/{skill_name}/SKILL.md").exists())
             summary = summary_path.read_text(encoding="utf-8")
             self.assertIn("Gmail MCP: prepare an email draft for team@example.com with subject AI session summary", summary)
-            self.assertIn("Slack MCP: prepare a message for #engineering; thread 123.456", summary)
+            self.assertIn("Slack webhook URL: configured", summary)
+            self.assertIn("https://hooks.slack.com/services/T000/B000/secret", config_path.read_text(encoding="utf-8"))
             self.assertIn("Work Completed", summary)
             self.assertIn("Lessons Learned", summary)
             self.assertIn("Results And Evidence", summary)
             self.assertIn("Improvement Backlog", summary)
             self.assertIn("Compound Engineering Notes", summary)
+            printed_text = "\n".join(str(call.args[0]) for call in printed.call_args_list if call.args)
+            self.assertIn("Restart OpenCode or open a new session", printed_text)
 
-    def test_non_interactive_rejects_missing_slack_details(self):
+    def test_non_interactive_rejects_missing_slack_webhook_url(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             with self.assertRaises(SystemExit) as raised:
@@ -66,15 +73,17 @@ class CliTests(unittest.TestCase):
                     [
                         "--non-interactive",
                         "--output-modes",
-                        "slack-mcp",
+                        "slack-webhook",
                         "--output-dir",
                         str(root / "out"),
                         "--skill-dir",
                         str(root / "skills"),
+                        "--config-dir",
+                        str(root / "config"),
                     ]
                 )
 
-            self.assertEqual(str(raised.exception), "slack-mcp requires --slack-channel")
+            self.assertEqual(str(raised.exception), "slack-webhook requires --slack-webhook-url")
 
     def test_skill_name_must_be_path_safe(self):
         unsafe_names = ("../escape", "/tmp/escape", "nested/skill", "NestedSkill")
@@ -91,6 +100,8 @@ class CliTests(unittest.TestCase):
                             str(root / "out"),
                             "--skill-dir",
                             str(root / "skills"),
+                            "--config-dir",
+                            str(root / "config"),
                         ]
                     )
 

@@ -23,25 +23,18 @@
     "ai-bricklaying": "./bin/ai-bricklaying.js"
   },
   "files": [
-    "ai_bricklaying/__init__.py",
-    "ai_bricklaying/cli.py",
-    "ai_bricklaying/models.py",
-    "ai_bricklaying/session_sources.py",
-    "ai_bricklaying/skill_writer.py",
-    "ai_bricklaying/summarizer.py",
-    "ai_bricklaying/template.py",
-    "ai_bricklaying/tui.py",
     "assets/ai-bricklaying.png",
     "bin/ai-bricklaying.js",
     "README.md",
-    "pyproject.toml"
+    "README.ko.md"
   ],
   "scripts": {
-    "test": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests",
-    "pack:dry-run": "npm pack --dry-run --json"
+    "test": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests && node tests/cli-node.test.js",
+    "pack:dry-run": "npm pack --dry-run --json",
+    "test:node": "node tests/cli-node.test.js"
   },
   "engines": {
-    "node": ">=14"
+    "node": ">=16"
   },
   "os": [
     "darwin",

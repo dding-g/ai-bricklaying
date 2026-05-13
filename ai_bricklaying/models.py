@@ -36,5 +36,5 @@ class SummaryConfig:
     output_dir: Path
     gmail_recipient: str | None = None
     gmail_subject: str | None = None
-    slack_channel: str | None = None
-    slack_thread: str | None = None
+    slack_webhook_url: str | None = None
+    config_dir: Path | None = None

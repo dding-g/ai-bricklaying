@@ -57,10 +57,9 @@ def build_summary(config: SummaryConfig, records: list[SessionRecord]) -> str:
         recipient = config.gmail_recipient or "not provided"
         subject = config.gmail_subject or "not provided"
         lines.append(f"- Gmail MCP: prepare an email draft for {recipient} with subject {subject}")
-    if "slack-mcp" in config.output_modes:
-        channel = config.slack_channel or "not provided"
-        thread = config.slack_thread or "not provided"
-        lines.append(f"- Slack MCP: prepare a message for {channel}; thread {thread}")
+    if "slack-webhook" in config.output_modes:
+        status = "configured" if config.slack_webhook_url else "not provided"
+        lines.append(f"- Slack webhook URL: {status}; use the saved config file for delivery")
     return "\n".join(lines).strip() + "\n"
 
 
