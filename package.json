@@ -34,11 +34,14 @@
     "test:node": "node tests/cli-node.test.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "os": [
     "darwin",
     "linux",
     "win32"
-  ]
+  ],
+  "dependencies": {
+    "markdown-to-slack-blocks": "^1.5.0"
+  }
 }

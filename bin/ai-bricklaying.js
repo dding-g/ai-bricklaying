@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const readline = require('readline');
+const { markdownToBlocks, splitBlocksWithText } = require('markdown-to-slack-blocks');
 
 const HOME = os.homedir();
 const DEFAULT_OUTPUT_DIR = path.join(HOME, 'ai-bricklaying');
@@ -77,6 +78,26 @@ const color = {
 
 function slug(value) {
   return value.toLowerCase().replace(/ /g, '-');
+}
+
+function fileSlug(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/`/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'summary';
+}
+
+function titleFromMarkdown(markdown) {
+  const heading = String(markdown).split('\n').find((line) => line.startsWith('# '));
+  return heading ? heading.replace(/^#\s+/, '').trim() : 'AI Bricklaying Summary';
+}
+
+function summaryFileName(markdown, dateKey = localDateKey(new Date())) {
+  const title = titleFromMarkdown(markdown)
+    .replace(new RegExp(`(^|\\s+-\\s+)${dateKey}$`), '')
+    .trim();
+  return `${dateKey}-${fileSlug(title)}.md`;
 }
 
 function expandHome(value) {
@@ -680,67 +701,18 @@ function buildSummary(config, records) {
   return `${lines.join('\n').trim()}\n`;
 }
 
-function slackEscape(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function buildSlackPayload(config, records) {
-  const sourceNames = config.selectedSources.map((source) => source.label).join(', ') || 'none selected';
-  const targetNames = config.targets.map((target) => target.name).join(', ');
-  const title = `AI Bricklaying Summary - ${localDateKey(new Date())}`;
-  const sessionCount = records.length;
-  const previewLines = [];
-
-  for (const record of records.slice(0, 3)) {
-    const [first] = importantSentences(record.text);
-    if (first) previewLines.push(`• *${slackEscape(record.source)}*: ${slackEscape(first.slice(0, 220))}`);
-  }
-  if (!previewLines.length) {
-    previewLines.push('• No local session snippets were found. Check configured source directories if this is unexpected.');
-  }
-
-  const blocks = [
-    {
-      type: 'header',
-      text: { type: 'plain_text', text: title, emoji: false },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Skill:* \`${slackEscape(config.skillName)}\`\n*Targets:* ${slackEscape(targetNames)}\n*Summary source:* ${slackEscape(sourceNames)}\n*Language:* ${slackEscape(config.language)}\n*Session artifacts:* *${sessionCount}*`,
-      },
-    },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*Work Completed*\n${previewLines.join('\n')}`,
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '*Lessons Learned*\nReview the generated Markdown summary for durable lessons, verification evidence, reusable patterns, and next improvements.',
-      },
-    },
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '*Compound Engineering Notes*\nThe saved `SKILL.md` turns today\'s session summary workflow into reusable agent context.',
-      },
-    },
-  ];
+function buildSlackPayload(markdown) {
+  const blocks = markdownToBlocks(markdown);
+  const messages = splitBlocksWithText(blocks).map((message) => ({
+    text: message.text,
+    blocks: message.blocks,
+  }));
+  const [firstMessage] = messages;
 
   return {
-    text: `*${title}* - ${sessionCount} session artifact(s) summarized for ${targetNames}.`,
-    blocks,
+    text: firstMessage ? firstMessage.text : titleFromMarkdown(markdown),
+    blocks: firstMessage ? firstMessage.blocks : [],
+    messages,
   };
 }
 
@@ -765,7 +737,7 @@ function ensurePrivateDir(dirPath) {
 
 function writeSummaryFile(config, markdown) {
   ensureDir(config.outputDir);
-  const filePath = path.join(config.outputDir, 'ai-bricklaying-summary-skill.md');
+  const filePath = path.join(config.outputDir, summaryFileName(markdown));
   writeFileSafely(filePath, markdown);
   return filePath;
 }
@@ -796,11 +768,11 @@ function slackPayloadPath(config) {
   return path.join(config.outputDir, 'ai-bricklaying-slack-payload.json');
 }
 
-function writeSlackPayloadFile(config, records) {
+function writeSlackPayloadFile(config, markdown) {
   if (!config.outputModes.includes('slack-webhook')) return null;
   ensureDir(config.outputDir);
   const filePath = slackPayloadPath(config);
-  writeFileSafely(filePath, `${JSON.stringify(buildSlackPayload(config, records), null, 2)}\n`);
+  writeFileSafely(filePath, `${JSON.stringify(buildSlackPayload(markdown), null, 2)}\n`);
   return filePath;
 }
 
@@ -892,6 +864,7 @@ function printCompletion(config, paths) {
   if (config.outputModes.includes('slack-webhook')) {
     console.log('Slack webhook delivery selected: use the saved config file to post the markdown content.');
   }
+  console.log(color.bold(`Use the generated skill: /${config.skillName}`));
 }
 
 async function run(argv) {
@@ -962,7 +935,7 @@ async function run(argv) {
 
   const summary = buildSummary(config, records);
   const summaryPath = writeSummaryFile(config, summary);
-  const slackPayloadPath = writeSlackPayloadFile(config, records);
+  const slackPayloadPath = writeSlackPayloadFile(config, summary);
   const metadataPath = writeMetadataFile(config, summaryPath, records.length);
   const savedConfigPath = writeConfigFile(config);
   const skillPaths = writeSkills(config);

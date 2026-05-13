@@ -28,7 +28,7 @@ Or run without installing:
 npx ai-bricklaying --help
 ```
 
-The npm package now runs through a native dependency-free Node.js CLI. The Python package remains available for Python development and tests, but npm users no longer need Python at runtime.
+The npm package now runs through a native Node.js CLI. The Python package remains available for Python development and tests, but npm users no longer need Python at runtime.
 
 ## Run Locally
 
@@ -46,7 +46,7 @@ ai-bricklaying
 
 The CLI uses a terminal-first wizard with checkbox-style choices, keyboard navigation in TTY sessions, comma-separated fallback prompts when piped, `NO_COLOR` support, and no ANSI color when output is redirected. It writes:
 
-- `ai-bricklaying-summary-skill.md` in the selected output directory. The default is `~/ai-bricklaying`.
+- `YYYY-MM-DD-{title}.md` in the selected output directory. The default is `~/ai-bricklaying`.
 - `ai-bricklaying-summary-skill.json` metadata in the selected output directory.
 - `ai-bricklaying-slack-payload.json` Slack mrkdwn payload when Slack webhook delivery is selected.
 - `SKILL.md` inside `<selected skill directory>/<skill-name>/`.
@@ -95,7 +95,7 @@ After this runs, the skill file should exist at `~/.config/opencode/skills/daily
 
 The Slack webhook URL is saved in `~/.config/ai-bricklaying/config.json` by default. Use `--config-dir` to override that location in tests or automation.
 
-When Slack webhook delivery is selected, the CLI also writes `ai-bricklaying-slack-payload.json` using Slack `mrkdwn` and blocks. Section names are highlighted with Slack bold syntax such as `*Work Completed*`, and skill names are formatted as inline code.
+When Slack webhook delivery is selected, the CLI also writes `ai-bricklaying-slack-payload.json` by converting the full Markdown summary into Slack Block Kit JSON with `markdown-to-slack-blocks`. Large summaries are split into a `messages` array so senders can post every batch instead of dropping content.
 
 When the target agent is OpenCode, the generated skill is saved under the selected OpenCode skills directory. OpenCode loads skills at session startup, so restart OpenCode or open a new session if the skill does not appear immediately.
 
@@ -114,4 +114,4 @@ npm test
 npm pack --dry-run --json
 ```
 
-The npm CLI is dependency-free Node.js. The Python package and tests intentionally continue to use only the Python standard library.
+The npm CLI runs on Node.js. The Python package and tests intentionally continue to use only the Python standard library.

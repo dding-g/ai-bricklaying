@@ -28,7 +28,7 @@ ai-bricklaying --help
 npx ai-bricklaying --help
 ```
 
-npm 패키지는 이제 의존성 없는 native Node.js CLI로 실행됩니다. Python 패키지는 Python 개발과 테스트용으로 남아 있지만, npm 사용자는 런타임에 Python이 필요하지 않습니다.
+npm 패키지는 이제 native Node.js CLI로 실행됩니다. Python 패키지는 Python 개발과 테스트용으로 남아 있지만, npm 사용자는 런타임에 Python이 필요하지 않습니다.
 
 ## 로컬에서 실행
 
@@ -46,7 +46,7 @@ ai-bricklaying
 
 CLI는 checkbox 형태의 선택지, TTY 세션의 keyboard navigation, pipe 환경의 comma-separated fallback prompt, `NO_COLOR` 지원, redirect 시 ANSI color 비활성화를 갖춘 terminal-first wizard로 진행되며 다음 파일을 저장합니다.
 
-- 선택한 output directory의 `ai-bricklaying-summary-skill.md`. 기본값은 `~/ai-bricklaying`입니다.
+- 선택한 output directory의 `YYYY-MM-DD-{title}.md`. 기본값은 `~/ai-bricklaying`입니다.
 - 선택한 output directory의 `ai-bricklaying-summary-skill.json` metadata
 - Slack webhook 전달을 선택한 경우 `ai-bricklaying-slack-payload.json` Slack mrkdwn payload
 - `<selected skill directory>/<skill-name>/SKILL.md`
@@ -95,7 +95,7 @@ ai-bricklaying \
 
 Slack webhook URL은 기본적으로 `~/.config/ai-bricklaying/config.json`에 저장됩니다. 테스트나 자동화에서는 `--config-dir`로 위치를 바꿀 수 있습니다.
 
-Slack webhook 전달을 선택하면 CLI는 Slack `mrkdwn`과 blocks 형식을 사용하는 `ai-bricklaying-slack-payload.json`도 생성합니다. 섹션 이름은 `*Work Completed*`처럼 Slack bold 문법으로 강조되고, skill 이름은 inline code로 표시됩니다.
+Slack webhook 전달을 선택하면 CLI는 전체 Markdown summary를 `markdown-to-slack-blocks`로 Slack Block Kit JSON으로 변환한 `ai-bricklaying-slack-payload.json`도 생성합니다. 긴 summary는 `messages` 배열로 나뉘어 모든 batch를 전송할 수 있습니다.
 
 대상 agent가 OpenCode인 경우 생성된 skill은 선택한 OpenCode skills directory 아래에 저장됩니다. OpenCode는 세션 시작 시점에 skill을 로드하므로, 바로 보이지 않으면 OpenCode를 재시작하거나 새 세션을 열어 주세요.
 
@@ -114,4 +114,4 @@ npm test
 npm pack --dry-run --json
 ```
 
-npm CLI는 dependency-free Node.js로 동작합니다. Python package와 테스트는 계속 Python standard library만 사용합니다.
+npm CLI는 Node.js로 동작합니다. Python package와 테스트는 계속 Python standard library만 사용합니다.
