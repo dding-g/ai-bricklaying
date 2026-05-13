@@ -6,6 +6,7 @@ const path = require('path');
 const readline = require('readline');
 
 const HOME = os.homedir();
+const DEFAULT_OUTPUT_DIR = path.join(HOME, 'ai-bricklaying');
 const OUTPUT_MODES = ['file', 'gmail-mcp', 'slack-webhook'];
 const TEXT_EXTENSIONS = new Set(['.json', '.jsonl', '.md', '.txt', '.log']);
 const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
@@ -92,7 +93,7 @@ function parseArgs(argv) {
     language: 'English',
     outputModes: 'file',
     skillName: 'daily-ai-session-summary',
-    outputDir: 'summaries',
+    outputDir: DEFAULT_OUTPUT_DIR,
     configDir: path.join(HOME, '.config/ai-bricklaying'),
   };
   const aliases = {
@@ -175,7 +176,7 @@ Options:
   --output-modes, --delivery <list> file, gmail-mcp, slack-webhook
   --skill-name <slug>               Generated skill directory name
   --skill-dir <dir>                 Directory where the skill folder is written
-  --output-dir <dir>                Directory for summary files [summaries]
+  --output-dir <dir>                Directory for summary files [~/ai-bricklaying]
   --gmail-recipient, --gmail-to     Gmail MCP recipient
   --gmail-subject <subject>         Gmail MCP subject
   --slack-webhook-url <url>         Slack incoming webhook URL
@@ -199,12 +200,32 @@ function targetsFromArgs(args) {
   return keys.map((key) => ({ ...TARGET_BY_KEY.get(key), modelHint: args.targetModel }));
 }
 
-function sourcesFromArgs(args) {
+function sourceOptionsForTargets(targets) {
+  const seen = new Set();
+  const sources = [];
+  for (const target of targets) {
+    const key = slug(target.name);
+    const source = SOURCE_BY_KEY.get(key);
+    if (source && !seen.has(source.key)) {
+      sources.push(source);
+      seen.add(source.key);
+    }
+  }
+  return sources;
+}
+
+function sourcesFromArgs(args, targets) {
+  const allowedSources = sourceOptionsForTargets(targets);
+  const allowedKeys = new Set(allowedSources.map((source) => source.key));
   const keys = csv(args.sources);
-  if (keys.length === 0) return [];
+  if (keys.length === 0) return allowedSources.slice(0, 1);
   if (keys.length > 1) throw new CliError('--sources accepts exactly one summary source');
   const unknown = keys.filter((key) => !SOURCE_BY_KEY.has(key));
   if (unknown.length) throw new CliError(`Unknown source(s): ${unknown.join(', ')}`);
+  const notSelected = keys.filter((key) => !allowedKeys.has(key));
+  if (notSelected.length) {
+    throw new CliError(`--sources must be one of the selected target agents: ${[...allowedKeys].join(', ')}`);
+  }
   return keys.map((key) => SOURCE_BY_KEY.get(key));
 }
 
@@ -799,6 +820,19 @@ function writeSkill(config, target) {
   ensureDir(skillDir);
   const filePath = path.join(skillDir, 'SKILL.md');
   const sourceNames = config.selectedSources.map((source) => source.label).join(', ') || 'none selected';
+  const deliveryModes = config.outputModes.join(', ');
+  const deliveryInstructions = [
+    '- `file`: always save the final markdown summary locally and report the saved path.',
+  ];
+  if (config.outputModes.includes('gmail-mcp')) {
+    deliveryInstructions.push('- `gmail-mcp`: when the CLI result includes this mode, prepare or send the saved markdown summary through Gmail MCP using the configured recipient and subject. If recipient, subject, or authorization is missing, report the exact missing requirement instead of guessing.');
+  }
+  if (config.outputModes.includes('slack-webhook')) {
+    deliveryInstructions.push('- `slack-webhook`: when the CLI result includes this mode, format the result with Slack `mrkdwn`, use the saved webhook configuration, and report any missing webhook URL instead of exposing or inventing secrets.');
+  }
+  if (config.outputModes.length === 1 && config.outputModes[0] === 'file') {
+    deliveryInstructions.push('- File-only mode: do not attempt Gmail, Slack, or any external delivery unless the user explicitly asks for a new delivery mode later.');
+  }
   const markdown = `---
 name: ${config.skillName}
 description: Summarize today's AI coding agent sessions into a useful compound-engineering briefing for the user.
@@ -812,13 +846,21 @@ Use this skill when the user asks for a daily summary of AI coding work, session
 
 Default session sources: ${sourceNames}.
 
+## CLI Result Delivery Modes
+
+This skill was generated from the CLI result with delivery modes: ${deliveryModes}.
+
+Follow the CLI-selected delivery modes exactly:
+
+${deliveryInstructions.join('\n')}
+
 ## Workflow
 
 1. Gather today's session history from the selected agents.
 2. Identify actual work completed, decisions made, verification evidence, failed attempts, and reusable lessons.
 3. Write the result in ${config.language}.
-4. Save a markdown file even if the user also asks to send the result through Gmail or Slack.
-5. If Gmail MCP or Slack webhook delivery is requested, prepare the message using the saved configuration and clearly report any missing recipient, webhook URL, or authorization.
+4. Apply the CLI result delivery modes above: save locally, then optionally deliver through Gmail MCP or Slack webhook only when those modes were selected.
+5. Report saved files and delivery outcomes without printing secrets.
 
 ## Summary Template
 
@@ -868,7 +910,7 @@ async function run(argv) {
 
   if (args.nonInteractive) {
     targets = targetsFromArgs(args);
-    sources = sourcesFromArgs(args);
+    sources = sourcesFromArgs(args, targets);
     outputModes = outputModesFromArgs(args);
   } else {
     printIntro();
@@ -879,9 +921,10 @@ async function run(argv) {
       'Skill targets'
     );
     targets = targets.map((target) => ({ ...target, modelHint: args.targetModel }));
-    sources = [await chooseOne('2. Select one AI agent whose sessions should be summarized', SESSION_SOURCES, (item) => item.label)];
+    sources = [await chooseOne('2. Select one AI agent whose sessions should be summarized', sourceOptionsForTargets(targets), (item) => item.label)];
     args.language = await prompt('\n3. Result language', args.language);
-    console.log(color.muted('\n4. Default summary template will be embedded in English and instructed to output your chosen language.'));
+    args.outputDir = await prompt('4. File save directory', args.outputDir);
+    console.log(color.muted('\n5. Default summary template will be embedded in English and instructed to output your chosen language.'));
     outputModes = await chooseOutputModes();
     if (outputModes.includes('gmail-mcp')) {
       gmailRecipient = await prompt('Gmail MCP recipient (optional)') || null;

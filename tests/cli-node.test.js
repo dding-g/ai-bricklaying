@@ -65,6 +65,11 @@ function run(args, options = {}) {
   assert.ok(slackPayload.blocks.some((block) => block.type === 'header'));
   assert.ok(slackPayload.blocks.some((block) => block.text && block.text.type === 'mrkdwn' && block.text.text.includes('*Work Completed*')));
   assert.ok(slackPayload.blocks.some((block) => block.text && block.text.type === 'mrkdwn' && block.text.text.includes('`test-ai-session-summary`')));
+  const skill = fs.readFileSync(skillPath, 'utf8');
+  assert.ok(skill.includes('This skill was generated from the CLI result with delivery modes: file, gmail-mcp, slack-webhook.'));
+  assert.ok(skill.includes('`file`: always save the final markdown summary locally'));
+  assert.ok(skill.includes('`gmail-mcp`: when the CLI result includes this mode'));
+  assert.ok(skill.includes('`slack-webhook`: when the CLI result includes this mode'));
   assert.ok(result.stdout.includes('Restart OpenCode or open a new session'));
   assert.strictEqual(result.stdout.includes('\u001b['), false, 'NO_COLOR should suppress ANSI output');
 })();
@@ -88,6 +93,28 @@ function run(args, options = {}) {
   assert.deepStrictEqual(metadata.sessions, ['opencode']);
 })();
 
+(function testGeneratedSkillKeepsFileOnlyModeLocal() {
+  const root = tempRoot();
+  const skillName = 'file-only-session-summary';
+  const result = run([
+    '--non-interactive',
+    '--target-agent', 'opencode',
+    '--sources', 'opencode',
+    '--output-modes', 'file',
+    '--skill-name', skillName,
+    '--output-dir', path.join(root, 'out'),
+    '--skill-dir', path.join(root, 'skills'),
+    '--config-dir', path.join(root, 'config'),
+  ]);
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  const skill = fs.readFileSync(path.join(root, 'skills', skillName, 'SKILL.md'), 'utf8');
+  assert.ok(skill.includes('This skill was generated from the CLI result with delivery modes: file.'));
+  assert.ok(skill.includes('File-only mode: do not attempt Gmail, Slack, or any external delivery'));
+  assert.strictEqual(skill.includes('`gmail-mcp`: when the CLI result includes this mode'), false);
+  assert.strictEqual(skill.includes('`slack-webhook`: when the CLI result includes this mode'), false);
+})();
+
 (function testRejectsMultipleSummarySources() {
   const root = tempRoot();
   const result = run([
@@ -100,6 +127,21 @@ function run(args, options = {}) {
 
   assert.strictEqual(result.status, 2);
   assert.ok(result.stderr.includes('--sources accepts exactly one summary source'));
+})();
+
+(function testRejectsSummarySourceOutsideSelectedTargets() {
+  const root = tempRoot();
+  const result = run([
+    '--non-interactive',
+    '--target-agent', 'opencode',
+    '--sources', 'codex',
+    '--output-dir', path.join(root, 'out'),
+    '--skill-dir', path.join(root, 'skills'),
+    '--config-dir', path.join(root, 'config'),
+  ]);
+
+  assert.strictEqual(result.status, 2);
+  assert.ok(result.stderr.includes('--sources must be one of the selected target agents: opencode'));
 })();
 
 (function testInteractiveLineModeShowsCheckboxWizardFallback() {
@@ -115,6 +157,24 @@ function run(args, options = {}) {
   assert.ok(result.stdout.includes('[ ] Claude Code'));
   assert.ok(result.stdout.includes('[x] File save (always enabled)'));
   assert.ok(result.stdout.includes('AI Bricklaying files generated'));
+})();
+
+(function testInteractiveSourceChoicesAreLimitedToSelectedTargets() {
+  const root = tempRoot();
+  const result = run([
+    '--output-dir', path.join(root, 'out'),
+    '--skill-dir', path.join(root, 'skills'),
+    '--config-dir', path.join(root, 'config'),
+  ], { input: '3\n1\n\n\n1\n' });
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  const sourceSection = result.stdout.slice(
+    result.stdout.indexOf('2. Select one AI agent whose sessions should be summarized'),
+    result.stdout.indexOf('3. Result language')
+  );
+  assert.ok(sourceSection.includes('Codex'));
+  assert.strictEqual(sourceSection.includes('OpenCode'), false);
+  assert.strictEqual(sourceSection.includes('Claude Code'), false);
 })();
 
 (function testMissingSlackWebhookFails() {

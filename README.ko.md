@@ -46,7 +46,7 @@ ai-bricklaying
 
 CLI는 checkbox 형태의 선택지, TTY 세션의 keyboard navigation, pipe 환경의 comma-separated fallback prompt, `NO_COLOR` 지원, redirect 시 ANSI color 비활성화를 갖춘 terminal-first wizard로 진행되며 다음 파일을 저장합니다.
 
-- 선택한 output directory의 `ai-bricklaying-summary-skill.md`
+- 선택한 output directory의 `ai-bricklaying-summary-skill.md`. 기본값은 `~/ai-bricklaying`입니다.
 - 선택한 output directory의 `ai-bricklaying-summary-skill.json` metadata
 - Slack webhook 전달을 선택한 경우 `ai-bricklaying-slack-payload.json` Slack mrkdwn payload
 - `<selected skill directory>/<skill-name>/SKILL.md`
@@ -74,6 +74,8 @@ npx ai-bricklaying --non-interactive --output-dir /tmp/ai-bricklaying-demo/out -
 ```
 
 비대화형 실행에서 `--target-agent`는 comma-separated skill target 목록을 받고, `--sources`는 요약할 source 하나만 받습니다.
+
+파일 저장 산출물 경로는 `--output-dir`로 지정할 수 있습니다. 생략하면 `~/ai-bricklaying`에 저장됩니다.
 
 생성된 skill을 OpenCode에 설치하려면 `--skill-dir`를 OpenCode user skills directory로 지정하세요.
 

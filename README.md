@@ -46,7 +46,7 @@ ai-bricklaying
 
 The CLI uses a terminal-first wizard with checkbox-style choices, keyboard navigation in TTY sessions, comma-separated fallback prompts when piped, `NO_COLOR` support, and no ANSI color when output is redirected. It writes:
 
-- `ai-bricklaying-summary-skill.md` in the selected output directory.
+- `ai-bricklaying-summary-skill.md` in the selected output directory. The default is `~/ai-bricklaying`.
 - `ai-bricklaying-summary-skill.json` metadata in the selected output directory.
 - `ai-bricklaying-slack-payload.json` Slack mrkdwn payload when Slack webhook delivery is selected.
 - `SKILL.md` inside `<selected skill directory>/<skill-name>/`.
@@ -74,6 +74,8 @@ npx ai-bricklaying --non-interactive --output-dir /tmp/ai-bricklaying-demo/out -
 ```
 
 For non-interactive runs, `--target-agent` accepts a comma-separated list of skill targets, while `--sources` accepts exactly one summary source.
+
+Use `--output-dir` to choose where file-save artifacts are written. If omitted, the CLI writes to `~/ai-bricklaying`.
 
 To install the generated skill into OpenCode, point `--skill-dir` at OpenCode's user skills directory:
 
