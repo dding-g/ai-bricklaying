@@ -4,18 +4,24 @@
   <img src="assets/ai-bricklaying.png" alt="ai-bricklaying logo" style="width:400px;"/>
 </p>
 
-`ai-bricklaying`은 AI 코딩 에이전트의 오늘 세션 기록을 요약해 재사용 가능한 스킬 브리프로 만들어 주는 작은 프롬프트 기반 CLI입니다. 영어 프롬프트로 진행되며, 결과 언어를 선택하고, Markdown 요약 파일과 `SKILL.md`를 저장하며, 선택적으로 Gmail MCP 또는 Slack webhook 전달에 필요한 정보를 기록합니다.
+`ai-bricklaying`은 AI 코딩 세션 기록을 가벼운 하루 회고로 만들고, 사용 중인 AI 도구에 재사용 가능한 skill을 설치해 주는 Node.js CLI입니다. 오늘 얻은 교훈, 개선한 점, 다음에 AI를 더 잘 쓰는 방법을 남기고 싶은 사용자를 위한 도구입니다.
 
-## CLI가 수집하는 정보
+## 하는 일
 
-- 생성된 스킬을 저장할 대상 AI Agent/model. 여러 대상을 선택할 수 있습니다.
-- 요약할 세션 소스 하나: OpenCode, Claude Code, Codex, Cursor, GitHub Copilot
-- 요약 결과 언어
-- 수행한 일, 배운 점, 결과, 개선점, compound engineering 관점을 담은 기본 영어 summary template
-- 출력 방식: 파일 저장은 항상 활성화되며 Gmail MCP, Slack webhook은 선택 사항
-- 선택한 전달 채널에 필요한 연동 정보
+- OpenCode, Claude Code, Codex, Cursor, GitHub Copilot 중 하나의 세션 소스를 요약합니다.
+- 선택한 하나 이상의 AI agent skill directory에 generated skill을 설치합니다.
+- 가벼운 Markdown summary를 `YYYY-MM-DD-{title}.md` 형식으로 저장합니다.
+- `ai-bricklaying-summary-skill.json` metadata를 저장합니다.
+- 선택적으로 Gmail MCP 전달 정보를 준비합니다.
+- 선택적으로 생성된 summary에서 Slack 전송용 payload를 만듭니다.
+- 다음 실행에서 재사용할 기본값을 `~/.config/ai-bricklaying/config.json`에 저장합니다.
 
-## npm으로 설치
+## 요구사항
+
+- Node.js 18 이상
+- npm 또는 npx
+
+## 설치
 
 ```bash
 npm install -g ai-bricklaying
@@ -28,28 +34,106 @@ ai-bricklaying --help
 npx ai-bricklaying --help
 ```
 
-npm 패키지는 이제 native Node.js CLI로 실행됩니다. Python 패키지는 Python 개발과 테스트용으로 남아 있지만, npm 사용자는 런타임에 Python이 필요하지 않습니다.
-
-## 로컬에서 실행
-
-로컬 CLI 사용도 Node/npm entrypoint를 사용합니다.
+설치된 버전을 확인하려면:
 
 ```bash
-node bin/ai-bricklaying.js --help
+ai-bricklaying --version
 ```
 
-## 대화형 흐름
+## 대화형 설정
+
+실행:
 
 ```bash
 ai-bricklaying
 ```
 
-CLI는 checkbox 형태의 선택지, TTY 세션의 keyboard navigation, pipe 환경의 comma-separated fallback prompt, `NO_COLOR` 지원, redirect 시 ANSI color 비활성화를 갖춘 terminal-first wizard로 진행되며 다음 파일을 저장합니다.
+Wizard는 다음을 물어봅니다.
 
-- 선택한 output directory의 `YYYY-MM-DD-{title}.md`. 기본값은 `~/ai-bricklaying`입니다.
-- 선택한 output directory의 `ai-bricklaying-summary-skill.json` metadata
-- Slack webhook 전달을 선택한 경우 `ai-bricklaying-slack-payload.json` Slack mrkdwn payload
-- `<selected skill directory>/<skill-name>/SKILL.md`
+1. Generated skill을 설치할 target AI agent. 여러 개를 선택할 수 있습니다.
+2. 요약할 session source 하나. 2번 선택지는 1번에서 선택한 agent로 제한됩니다. Skill이 설치되는 agent의 세션을 요약해야 하기 때문입니다.
+3. Summary 언어.
+4. File save directory. 기본값은 `~/ai-bricklaying`입니다.
+5. Output mode. File save는 항상 켜져 있으며, Gmail MCP와 Slack webhook은 선택 사항입니다.
+
+생성이 완료되면 CLI는 마지막에 skill 사용법을 bold로 출력합니다.
+
+```text
+Use the generated skill: /daily-ai-session-summary
+```
+
+OpenCode에 설치했는데 바로 보이지 않으면 OpenCode를 재시작하거나 새 세션을 여세요. OpenCode는 세션 시작 시점에 skill을 로드합니다.
+
+## 생성되는 파일
+
+기본 저장 경로는 `~/ai-bricklaying`입니다. 다른 위치를 쓰려면 `--output-dir`를 지정하세요.
+
+- `YYYY-MM-DD-{title}.md`: 교훈, 개선점, 더 나은 AI 사용법 중심의 가벼운 summary.
+- `ai-bricklaying-summary-skill.json`: metadata, 선택한 target, delivery mode, summary path, generated skill path.
+- `ai-bricklaying-slack-payload.json`: `slack-webhook` 선택 시 생성되는 Slack payload.
+- `<skill-dir>/<skill-name>/SKILL.md`: 재사용 가능한 generated skill.
+
+`--skill-name`은 `daily-ai-session-summary`처럼 path-safe lowercase slug여야 합니다.
+
+## Slack 전달
+
+Slack으로 보낼 payload를 만들려면 `slack-webhook`을 선택합니다.
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent opencode \
+  --sources opencode \
+  --output-modes slack-webhook \
+  --slack-webhook-url "https://hooks.slack.com/services/..."
+```
+
+Webhook URL은 저장된 뒤 다시 출력되지 않습니다. 기존 config에 webhook이 있으면 prompt에는 실제 URL 대신 `[configured]`로 표시됩니다.
+
+Slack payload 동작:
+
+- 생성된 summary를 Slack 전송용 message payload로 변환합니다.
+- 긴 summary는 `messages` 배열로 나뉘어 모든 batch를 전송할 수 있습니다.
+- 간단한 webhook 사용을 위해 첫 batch는 top-level `text`와 `blocks`에도 들어갑니다. Heading과 list가 제대로 보이려면 `blocks`를 전송하세요.
+
+## Gmail MCP 전달
+
+Gmail MCP로 보낼 계획이라면 `gmail-mcp`를 선택합니다.
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent opencode \
+  --sources opencode \
+  --output-modes gmail-mcp \
+  --gmail-recipient team@example.com \
+  --gmail-subject "AI session summary"
+```
+
+Generated skill은 이 mode가 선택된 경우에만 Gmail MCP를 사용하라고 명시합니다.
+
+## Config 기본값
+
+CLI는 로컬 설정을 아래 경로에 저장합니다.
+
+```text
+~/.config/ai-bricklaying/config.json
+```
+
+저장되는 값에는 delivery 설정과 target agent, source, language, output mode, skill name, skill directory, output directory 같은 기본값이 포함됩니다. 다음 실행 시 CLI는 이 파일을 읽어 기본값으로 사용합니다.
+
+Command-line flag는 항상 저장된 config보다 우선합니다. 테스트나 자동화에서 다른 config 위치를 쓰려면 `--config-dir`를 사용하세요.
+
+## 최신화 방법
+
+npm에서 CLI를 업데이트한 뒤 다시 실행하면 generated skill을 새 버전으로 갱신할 수 있습니다.
+
+```bash
+npm install -g ai-bricklaying@latest
+ai-bricklaying
+```
+
+CLI는 저장된 config를 기본값으로 다시 사용하므로, 보통은 기존 prompt 값을 그대로 받아 `SKILL.md`를 재생성하면 됩니다. OpenCode에 설치했다면 재생성 후 OpenCode를 재시작하거나 새 세션을 여세요.
 
 ## 비대화형 예시
 
@@ -63,21 +147,20 @@ ai-bricklaying \
   --gmail-recipient team@example.com \
   --gmail-subject "AI session summary" \
   --slack-webhook-url "https://hooks.slack.com/services/..." \
-  --output-dir /tmp/ai-bricklaying-demo/out \
-  --skill-dir /tmp/ai-bricklaying-demo/skills
+  --output-dir ~/ai-bricklaying \
+  --skill-name daily-ai-session-summary
 ```
 
-npm으로 실행해도 동일한 플래그를 사용할 수 있습니다.
+비대화형 실행 규칙:
 
-```bash
-npx ai-bricklaying --non-interactive --output-dir /tmp/ai-bricklaying-demo/out --skill-dir /tmp/ai-bricklaying-demo/skills
-```
+- `--target-agent`는 comma-separated list를 받습니다.
+- `--sources`는 정확히 하나만 받습니다.
+- `--sources`는 선택한 target agent 중 하나여야 합니다.
+- `--output-modes`는 `file`, `gmail-mcp`, `slack-webhook`을 받을 수 있으며 `file`은 항상 켜져 있습니다.
 
-비대화형 실행에서 `--target-agent`는 comma-separated skill target 목록을 받고, `--sources`는 요약할 source 하나만 받습니다.
+## OpenCode에 설치
 
-파일 저장 산출물 경로는 `--output-dir`로 지정할 수 있습니다. 생략하면 `~/ai-bricklaying`에 저장됩니다.
-
-생성된 skill을 OpenCode에 설치하려면 `--skill-dir`를 OpenCode user skills directory로 지정하세요.
+OpenCode user skills directory에 바로 설치하려면:
 
 ```bash
 ai-bricklaying \
@@ -89,29 +172,34 @@ ai-bricklaying \
   --skill-dir ~/.config/opencode/skills
 ```
 
-실행 후 skill 파일은 `~/.config/opencode/skills/daily-ai-session-summary/SKILL.md`에 생성되어야 합니다.
+실행 후 skill은 아래 위치에 생성됩니다.
 
-`--skill-name`은 path-safe lowercase slug여야 합니다. 생성된 스킬이 선택한 `--skill-dir` 아래에만 저장되도록 하기 위한 제한입니다.
-
-Slack webhook URL은 기본적으로 `~/.config/ai-bricklaying/config.json`에 저장됩니다. 테스트나 자동화에서는 `--config-dir`로 위치를 바꿀 수 있습니다.
-
-Slack webhook 전달을 선택하면 CLI는 전체 Markdown summary를 `markdown-to-slack-blocks`로 Slack Block Kit JSON으로 변환한 `ai-bricklaying-slack-payload.json`도 생성합니다. 긴 summary는 `messages` 배열로 나뉘어 모든 batch를 전송할 수 있습니다.
-
-대상 agent가 OpenCode인 경우 생성된 skill은 선택한 OpenCode skills directory 아래에 저장됩니다. OpenCode는 세션 시작 시점에 skill을 로드하므로, 바로 보이지 않으면 OpenCode를 재시작하거나 새 세션을 열어 주세요.
-
-npm 개발용으로는 native Node CLI를 직접 실행합니다.
-
-```bash
-node bin/ai-bricklaying.js --help
+```text
+~/.config/opencode/skills/daily-ai-session-summary/SKILL.md
 ```
 
-Python 개발용으로는 Python 모듈을 `python3 -m ai_bricklaying.cli`로 직접 실행할 수 있습니다.
+사용 방법:
 
-## 테스트
-
-```bash
-npm test
-npm pack --dry-run --json
+```text
+/daily-ai-session-summary
 ```
 
-npm CLI는 Node.js로 동작합니다. Python package와 테스트는 계속 Python standard library만 사용합니다.
+## CLI 옵션
+
+```text
+--non-interactive                 prompt 없이 default와 flag로 실행
+--target-agent <agents>           skill target: opencode,claude-code,codex,cursor,github-copilot
+--target-model <label>            생성 artifact에 기록할 model label
+--sources, --sessions <source>    요약할 session source 하나
+--language <language>             summary 언어 [English]
+--output-modes, --delivery <list> file, gmail-mcp, slack-webhook
+--skill-name <slug>               generated skill directory name
+--skill-dir <dir>                 skill folder를 저장할 directory
+--output-dir <dir>                summary file 저장 directory [~/ai-bricklaying]
+--gmail-recipient, --gmail-to     Gmail MCP recipient
+--gmail-subject <subject>         Gmail MCP subject
+--slack-webhook-url <url>         Slack incoming webhook URL
+--config-dir <dir>                ai-bricklaying config directory
+-v, --version                     version 출력
+-h, --help                        help 출력
+```

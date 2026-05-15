@@ -6,7 +6,10 @@ const path = require('path');
 const readline = require('readline');
 const { markdownToBlocks, splitBlocksWithText } = require('markdown-to-slack-blocks');
 
+const PACKAGE_JSON = require('../package.json');
+
 const HOME = os.homedir();
+const CLI_VERSION = PACKAGE_JSON.version;
 const DEFAULT_OUTPUT_DIR = path.join(HOME, 'ai-bricklaying');
 const OUTPUT_MODES = ['file', 'gmail-mcp', 'slack-webhook'];
 const TEXT_EXTENSIONS = new Set(['.json', '.jsonl', '.md', '.txt', '.log']);
@@ -37,31 +40,35 @@ const DEFAULT_SUMMARY_TEMPLATE = `# Daily AI Bricklaying Summary
 
 Write the summary in {language}.
 
-## Executive Brief
-Summarize the day in 3-5 sentences. Focus on the user's actual progress, decisions, and remaining leverage points.
+Keep the summary lightweight and useful for the user. Do not list raw file paths, session artifact paths, or long evidence dumps unless the user explicitly asks for them.
 
-## Work Completed
-List the meaningful work streams. For each item, include the agent source, the concrete outcome, and the artifact or decision produced.
+## Today's Takeaways
+Summarize the day in 3-5 short bullets. Focus on what changed in the user's understanding, workflow, or judgment.
 
 ## Lessons Learned
-Capture reusable lessons: implementation patterns, failed assumptions, debugging insights, workflow improvements, and tool limitations.
+Capture reusable lessons: mistakes corrected, assumptions challenged, prompts that worked or failed, tool limits discovered, and decisions worth remembering.
 
-## Results And Evidence
-Describe what changed, what was verified, what remains unverified, and where the evidence came from. Prefer specific files, commands, issues, commits, or session references when available.
+## What Improved
+Describe the practical improvements made today: process, product, code quality, documentation, verification habits, or agent workflow.
 
-## Compound Engineering Notes
-Explain how today's work can compound: reusable prompts, skills, docs, tests, automation, architectural patterns, or guardrails that reduce future effort.
+## Better AI Usage Next Time
+Evaluate how the user worked with AI today. Suggest sharper prompts, better review habits, better delegation choices, or checks that would improve the next session.
 
-## Improvement Backlog
-Prioritize the next 3-7 improvements. Each item should include why it matters, the smallest useful next step, and which agent or workflow should handle it.
+## Tomorrow's Best Next Step
+Give 1-3 concrete next actions. Keep them small, high-leverage, and easy to start.
 
 ## Follow-Up Prompt
-Write a concise prompt the user can paste into an AI coding agent tomorrow to continue from today's context.
+Write one concise prompt the user can paste into an AI coding agent tomorrow. It should carry forward the lesson, not a long transcript.
 `;
 
-const KEYWORDS = [
-  'implement', 'fix', 'debug', 'test', 'review', 'plan', 'refactor', 'error',
-  'learn', 'decide', 'ship', 'build', 'verify', 'prompt', 'skill', 'session',
+const SUMMARY_THEMES = [
+  ['implementation', ['implement', 'build', 'ship', 'feature']],
+  ['debugging', ['fix', 'debug', 'error', 'bug', 'fail']],
+  ['verification', ['test', 'verify', 'check', 'review']],
+  ['planning', ['plan', 'scope', 'decide', 'design']],
+  ['refactoring', ['refactor', 'cleanup', 'simplify']],
+  ['prompting', ['prompt', 'skill', 'agent', 'session']],
+  ['learning', ['learn', 'lesson', 'insight', 'improve']],
 ];
 
 function useColor() {
@@ -144,6 +151,10 @@ function parseArgs(argv) {
     const flag = aliases[flagPart] || flagPart;
     if (flag === '--help' || flag === '-h') {
       args.help = true;
+      continue;
+    }
+    if (flag === '--version' || flag === '-v') {
+      args.version = true;
       continue;
     }
     if (flag === '--non-interactive') {
@@ -238,6 +249,7 @@ Options:
   --gmail-subject <subject>         Gmail MCP subject
   --slack-webhook-url <url>         Slack incoming webhook URL
   --config-dir <dir>                ai-bricklaying config directory
+  -v, --version                     Show CLI version
   -h, --help                        Show this help
 `);
 }
@@ -703,43 +715,26 @@ function localDateKey(date) {
 }
 
 function buildSummary(config, records) {
-  const grouped = new Map();
-  for (const record of records) {
-    if (!grouped.has(record.source)) grouped.set(record.source, []);
-    grouped.get(record.source).push(record);
-  }
+  const themes = summarizeThemes(records);
 
   const lines = [
     `# AI Bricklaying Daily Summary - ${localDateKey(new Date())}`,
     '',
     `Language: ${config.language}`,
     `Target skill: ${config.skillName}`,
-    `Target agent/model: ${config.target.name} (${config.target.modelHint})`,
+    `Summary source: ${config.selectedSources.map((source) => source.label).join(', ') || 'none selected'}`,
     '',
-    '## Source Coverage',
+    '## Lightweight Session Signals',
   ];
 
-  if (grouped.size) {
-    for (const [source, sourceRecords] of grouped) {
-      lines.push(`- ${source}: ${sourceRecords.length} session artifact(s)`);
+  if (records.length) {
+    lines.push(`- Found ${records.length} local session signal(s) from ${config.selectedSources.map((source) => source.label).join(', ')}.`);
+    if (themes.length) {
+      lines.push(`- Likely themes to reflect on: ${themes.join(', ')}.`);
     }
+    lines.push('- Use the template below to turn those signals into a short lesson-focused reflection instead of an artifact log.');
   } else {
-    lines.push('- No session artifacts were found for today. The generated skill still includes the reusable summary template and follow-up workflow.');
-  }
-
-  lines.push('', '## Extractive Session Notes');
-  if (grouped.size) {
-    for (const [source, sourceRecords] of grouped) {
-      lines.push('', `### ${source}`);
-      for (const record of sourceRecords) {
-        lines.push(`- \`${record.path}\``);
-        for (const sentence of importantSentences(record.text).slice(0, 5)) {
-          lines.push(`  - ${sentence}`);
-        }
-      }
-    }
-  } else {
-    lines.push('No local session snippets were available. Configure source directories with AI_BRICKLAYING_*_DIRS if your tools store history elsewhere.');
+    lines.push('- No clear session signals were found today. Use the template below as a lightweight reflection prompt.');
   }
 
   lines.push('', '## Summary Template For AI Agent', '', renderTemplate(config.language), '', '## Delivery Notes');
@@ -754,25 +749,38 @@ function buildSummary(config, records) {
   return `${lines.join('\n').trim()}\n`;
 }
 
+function summarizeThemes(records) {
+  const text = records.map((record) => record.text.toLowerCase()).join('\n');
+  return SUMMARY_THEMES
+    .map(([theme, words]) => ({
+      theme,
+      count: words.reduce((total, word) => total + (text.match(new RegExp(`\\b${word}`, 'g')) || []).length, 0),
+    }))
+    .filter((item) => item.count > 0)
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 4)
+    .map((item) => item.theme);
+}
+
+function slackFallbackText(markdown, index = 0, total = 1) {
+  const suffix = total > 1 ? ` (${index + 1}/${total})` : '';
+  return `${titleFromMarkdown(markdown)}${suffix}`;
+}
+
 function buildSlackPayload(markdown) {
   const blocks = markdownToBlocks(markdown);
-  const messages = splitBlocksWithText(blocks).map((message) => ({
-    text: message.text,
+  const batches = splitBlocksWithText(blocks);
+  const messages = batches.map((message, index) => ({
+    text: slackFallbackText(markdown, index, batches.length),
     blocks: message.blocks,
   }));
   const [firstMessage] = messages;
 
   return {
-    text: firstMessage ? firstMessage.text : titleFromMarkdown(markdown),
+    text: firstMessage ? firstMessage.text : slackFallbackText(markdown),
     blocks: firstMessage ? firstMessage.blocks : [],
     messages,
   };
-}
-
-function importantSentences(text) {
-  const candidates = text.split(/[.!?\n]/).map((part) => part.trim().replace(/\s+/g, ' ')).filter(Boolean);
-  const important = candidates.filter((part) => KEYWORDS.some((keyword) => part.toLowerCase().includes(keyword)));
-  return (important.length ? important : candidates).slice(0, 8);
 }
 
 function ensureDir(dirPath, mode = 0o755) {
@@ -804,6 +812,7 @@ function writeMetadataFile(config, summaryPath, sessionCount) {
     gmail_recipient: config.gmailRecipient || null,
     gmail_subject: config.gmailSubject || null,
     language: config.language,
+    cli_version: CLI_VERSION,
     session_count: sessionCount,
     sessions: config.selectedSources.map((source) => source.key),
     skill_dirs: config.targets.map((target) => path.join(target.defaultSkillDir, config.skillName)),
@@ -854,6 +863,7 @@ function writeConfigFile(config) {
       skill_name: config.skillName,
       skill_dir: sharedSkillDir,
       output_dir: config.outputDir,
+      cli_version: CLI_VERSION,
     },
   };
   writeFileSafely(filePath, `${JSON.stringify(payload, null, 2)}\n`, 0o600);
@@ -873,7 +883,7 @@ function writeSkill(config, target) {
     deliveryInstructions.push('- `gmail-mcp`: when the CLI result includes this mode, prepare or send the saved markdown summary through Gmail MCP using the configured recipient and subject. If recipient, subject, or authorization is missing, report the exact missing requirement instead of guessing.');
   }
   if (config.outputModes.includes('slack-webhook')) {
-    deliveryInstructions.push('- `slack-webhook`: when the CLI result includes this mode, format the result with Slack `mrkdwn`, use the saved webhook configuration, and report any missing webhook URL instead of exposing or inventing secrets.');
+    deliveryInstructions.push('- `slack-webhook`: when the CLI result includes this mode, read `ai-bricklaying-slack-payload.json` and post each entry in `messages` to the saved webhook. Send the JSON blocks, not the raw Markdown text, so headings and lists render as Slack Block Kit. Report any missing webhook URL instead of exposing or inventing secrets.');
   }
   if (config.outputModes.length === 1 && config.outputModes[0] === 'file') {
     deliveryInstructions.push('- File-only mode: do not attempt Gmail, Slack, or any external delivery unless the user explicitly asks for a new delivery mode later.');
@@ -938,12 +948,17 @@ function printCompletion(config, paths) {
     console.log('Slack webhook delivery selected: use the saved config file to post the markdown content.');
   }
   console.log(color.bold(`Use the generated skill: /${config.skillName}`));
+  console.log(`To refresh later: npm install -g ai-bricklaying@latest && ai-bricklaying`);
 }
 
 async function run(argv) {
   const args = parseArgs(argv);
   if (args.help) {
     printHelp();
+    return 0;
+  }
+  if (args.version) {
+    console.log(CLI_VERSION);
     return 0;
   }
   applyConfigDefaults(args, readConfigFile(args.configDir));
@@ -1000,6 +1015,7 @@ async function run(argv) {
     gmailRecipient,
     gmailSubject,
     language: args.language,
+    cliVersion: CLI_VERSION,
     outputDir: path.resolve(expandHome(args.outputDir)),
     outputModes,
     selectedSources: sources,

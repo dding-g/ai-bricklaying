@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const packageJson = require('../package.json');
 
 const cli = path.join(__dirname, '..', 'bin', 'ai-bricklaying.js');
 
@@ -28,6 +29,13 @@ function run(args, options = {}) {
     input: options.input,
   });
 }
+
+(function testVersionFlagPrintsPackageVersion() {
+  const result = run(['--version']);
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.strictEqual(result.stdout.trim(), packageJson.version);
+})();
 
 (function testNonInteractiveFlagsWriteOnlyToRequestedDirs() {
   const root = tempRoot();
@@ -65,29 +73,40 @@ function run(args, options = {}) {
   const summary = fs.readFileSync(markdownPath, 'utf8');
   assert.ok(summary.includes('Gmail MCP: prepare an email draft for team@example.com with subject AI session summary'));
   assert.ok(summary.includes('Slack webhook URL: configured'));
-  assert.ok(summary.includes('Work Completed'));
+  assert.ok(summary.includes('Lightweight Session Signals'));
+  assert.ok(summary.includes("Today's Takeaways"));
   assert.ok(summary.includes('Lessons Learned'));
-  assert.ok(summary.includes('Results And Evidence'));
-  assert.ok(summary.includes('Improvement Backlog'));
-  assert.ok(summary.includes('Compound Engineering Notes'));
+  assert.ok(summary.includes('What Improved'));
+  assert.ok(summary.includes('Better AI Usage Next Time'));
+  assert.ok(summary.includes("Tomorrow's Best Next Step"));
+  assert.strictEqual(summary.includes('/Users/'), false);
   assert.ok(fs.readFileSync(configPath, 'utf8').includes('https://hooks.slack.com/services/T000/B000/secret'));
   const slackPayload = JSON.parse(fs.readFileSync(slackPayloadPath, 'utf8'));
+  const metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
   const slackJson = JSON.stringify(slackPayload);
+  assert.strictEqual(metadata.cli_version, packageJson.version);
   assert.ok(slackPayload.text.startsWith('AI Bricklaying Daily Summary'));
+  assert.strictEqual(slackPayload.text.includes('##'), false);
   assert.ok(Array.isArray(slackPayload.messages));
   assert.ok(slackPayload.messages.length >= 1);
+  assert.strictEqual(slackPayload.messages[0].text.includes('##'), false);
   assert.ok(slackPayload.blocks.some((block) => block.type === 'header'));
-  assert.ok(slackJson.includes('Work Completed'));
+  assert.ok(slackJson.includes("Today&apos;s Takeaways") || slackJson.includes("Today's Takeaways"));
+  assert.ok(slackJson.includes('Better AI Usage Next Time'));
   assert.ok(slackJson.includes('Summary Template For AI Agent'));
-  assert.ok(slackJson.includes('Gmail MCP: prepare an email draft for team@example.com with subject AI session summary'));
+  assert.ok(slackJson.includes('Gmail MCP'));
+  assert.ok(slackJson.includes('team@example.com'));
+  assert.ok(slackJson.includes('AI session summary'));
   assert.ok(slackJson.includes('test-ai-session-summary'));
   const skill = fs.readFileSync(skillPath, 'utf8');
   assert.ok(skill.includes('This skill was generated from the CLI result with delivery modes: file, gmail-mcp, slack-webhook.'));
   assert.ok(skill.includes('`file`: always save the final markdown summary locally'));
   assert.ok(skill.includes('`gmail-mcp`: when the CLI result includes this mode'));
-  assert.ok(skill.includes('`slack-webhook`: when the CLI result includes this mode'));
+  assert.ok(skill.includes('post each entry in `messages`'));
+  assert.ok(skill.includes('Send the JSON blocks, not the raw Markdown text'));
   assert.ok(result.stdout.includes('Restart OpenCode or open a new session'));
   assert.ok(result.stdout.includes('Use the generated skill: /test-ai-session-summary'));
+  assert.ok(result.stdout.includes('npm install -g ai-bricklaying@latest && ai-bricklaying'));
   assert.strictEqual(result.stdout.includes('\u001b['), false, 'NO_COLOR should suppress ANSI output');
 })();
 
@@ -121,6 +140,8 @@ function run(args, options = {}) {
   assert.ok(fs.existsSync(path.join(outputDir, 'ai-bricklaying-slack-payload.json')));
   assert.ok(fs.existsSync(path.join(skillDir, 'saved-session-summary', 'SKILL.md')));
   const summary = fs.readFileSync(summaryPath(outputDir), 'utf8');
+  const savedConfig = JSON.parse(fs.readFileSync(path.join(configDir, 'config.json'), 'utf8'));
+  assert.strictEqual(savedConfig.defaults.cli_version, packageJson.version);
   assert.ok(summary.includes('Language: Korean'));
   assert.ok(summary.includes('Gmail MCP: prepare an email draft for saved@example.com with subject Saved subject'));
   assert.ok(summary.includes('Slack webhook URL: configured'));
@@ -343,10 +364,11 @@ function run(args, options = {}) {
 
   assert.strictEqual(result.status, 0, result.stderr);
   const summary = fs.readFileSync(summaryPath(outputDir), 'utf8');
-  assert.ok(summary.includes('[REDACTED SLACK WEBHOOK]'));
-  assert.ok(summary.includes('Bearer=[REDACTED]'));
+  assert.ok(summary.includes('Likely themes to reflect on: debugging'));
   assert.strictEqual(summary.includes('T000/B000/secret'), false);
   assert.strictEqual(summary.includes('abcdef123456'), false);
+  assert.strictEqual(summary.includes('hooks.slack.com'), false);
+  assert.strictEqual(summary.includes('/Users/'), false);
 })();
 
 (function testRedactsStructuredJsonSecrets() {
@@ -371,7 +393,7 @@ function run(args, options = {}) {
 
   assert.strictEqual(result.status, 0, result.stderr);
   const summary = fs.readFileSync(summaryPath(outputDir), 'utf8');
-  assert.ok(summary.includes('implemented useful summary workflow'));
+  assert.ok(summary.includes('Likely themes to reflect on: implementation'));
   assert.strictEqual(summary.includes('hunter2'), false);
   assert.strictEqual(summary.includes('abc123'), false);
 })();
