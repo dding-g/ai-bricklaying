@@ -10,7 +10,7 @@
 
 - OpenCode, Claude Code, Codex, Cursor, GitHub Copilot 중 하나의 세션 소스를 요약합니다.
 - 선택한 하나 이상의 AI agent skill directory에 generated skill을 설치합니다.
-- 가벼운 Markdown summary를 `YYYY-MM-DD-{title}.md` 형식으로 저장합니다.
+- 가벼운 Markdown summary를 `YYYY-MM-DD-ai-bricklaying-daily-summary.md` 형식으로 저장합니다.
 - `ai-bricklaying-summary-skill.json` metadata를 저장합니다.
 - 선택적으로 Gmail MCP 전달 정보를 준비합니다.
 - 선택적으로 생성된 summary에서 Slack 전송용 payload를 만듭니다.
@@ -68,8 +68,8 @@ OpenCode에 설치했는데 바로 보이지 않으면 OpenCode를 재시작하�
 
 기본 저장 경로는 `~/ai-bricklaying`입니다. 다른 위치를 쓰려면 `--output-dir`를 지정하세요.
 
-- `YYYY-MM-DD-{title}.md`: 교훈, 개선점, 더 나은 AI 사용법 중심의 가벼운 summary.
-- `ai-bricklaying-summary-skill.json`: metadata, 선택한 target, delivery mode, summary path, generated skill path.
+- `YYYY-MM-DD-ai-bricklaying-daily-summary.md`: 교훈, 개선점, 더 나은 AI 사용법 중심의 가벼운 summary.
+- `ai-bricklaying-summary-skill.json`: metadata, 선택한 target, delivery mode, summary path, generated skill directory.
 - `ai-bricklaying-slack-payload.json`: `slack-webhook` 선택 시 생성되는 Slack payload.
 - `<skill-dir>/<skill-name>/SKILL.md`: 재사용 가능한 generated skill.
 

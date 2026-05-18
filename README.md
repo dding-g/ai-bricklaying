@@ -10,7 +10,7 @@
 
 - Summarizes one selected session source: OpenCode, Claude Code, Codex, Cursor, or GitHub Copilot.
 - Installs the generated skill into one or more selected AI agent skill directories.
-- Saves a lightweight Markdown summary using `YYYY-MM-DD-{title}.md`.
+- Saves a lightweight Markdown summary using `YYYY-MM-DD-ai-bricklaying-daily-summary.md`.
 - Writes metadata to `ai-bricklaying-summary-skill.json`.
 - Optionally prepares Gmail MCP delivery details.
 - Optionally creates a Slack-ready payload from the generated summary.
@@ -68,8 +68,8 @@ If the target is OpenCode and the skill does not appear immediately, restart Ope
 
 By default, file outputs are written to `~/ai-bricklaying`. Use `--output-dir` to choose another directory.
 
-- `YYYY-MM-DD-{title}.md`: lightweight summary focused on takeaways, improvements, and better AI usage.
-- `ai-bricklaying-summary-skill.json`: metadata, selected targets, delivery modes, summary path, and generated skill paths.
+- `YYYY-MM-DD-ai-bricklaying-daily-summary.md`: lightweight summary focused on takeaways, improvements, and better AI usage.
+- `ai-bricklaying-summary-skill.json`: metadata, selected targets, delivery modes, summary path, and generated skill directories.
 - `ai-bricklaying-slack-payload.json`: Slack payload when `slack-webhook` is selected.
 - `<skill-dir>/<skill-name>/SKILL.md`: generated reusable skill.
 
