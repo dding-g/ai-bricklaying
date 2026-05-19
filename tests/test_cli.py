@@ -62,6 +62,12 @@ class CliTests(unittest.TestCase):
             self.assertIn("Results And Evidence", summary)
             self.assertIn("Improvement Backlog", summary)
             self.assertIn("Compound Engineering Notes", summary)
+            skill = skill_path.read_text(encoding="utf-8")
+            self.assertIn("## Output Locations", skill)
+            self.assertIn(f"Summary directory: `{output_dir}`", skill)
+            self.assertIn(f"Metadata file: `{metadata_path}`", skill)
+            self.assertIn(f"Config file: `{config_path}`", skill)
+            self.assertIn(f"Slack payload file: `{output_dir / 'ai-bricklaying-slack-payload.json'}`", skill)
             printed_text = "\n".join(str(call.args[0]) for call in printed.call_args_list if call.args)
             self.assertIn("Restart OpenCode or open a new session", printed_text)
 

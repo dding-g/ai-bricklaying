@@ -71,7 +71,7 @@ By default, file outputs are written to `~/ai-bricklaying`. Use `--output-dir` t
 - `YYYY-MM-DD-ai-bricklaying-daily-summary.md`: lightweight summary focused on takeaways, improvements, and better AI usage.
 - `ai-bricklaying-summary-skill.json`: metadata, selected targets, delivery modes, summary path, and generated skill directories.
 - `ai-bricklaying-slack-payload.json`: Slack payload when `slack-webhook` is selected.
-- `<skill-dir>/<skill-name>/SKILL.md`: generated reusable skill.
+- `<skill-dir>/<skill-name>/SKILL.md`: generated reusable skill. It embeds the configured summary directory, metadata path, config path, and Slack payload path so later agent runs save summaries to the same output location instead of an agent-local workspace.
 
 `--skill-name` must be a path-safe lowercase slug such as `daily-ai-session-summary`.
 

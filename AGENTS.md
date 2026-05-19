@@ -44,12 +44,12 @@
 ## 검증 규칙
 
 ```bash
-npm test
-npm run pack:dry-run
+bun run test
+bun run pack:dry-run
 ```
 
-- Node CLI behavior를 바꿨다면 최소 `npm test`를 실행한다.
-- npm 배포 파일 목록이 바뀌면 `npm run pack:dry-run`으로 package contents를 확인한다.
+- Node CLI behavior를 바꿨다면 최소 `bun run test`를 실행한다.
+- npm 배포 파일 목록이 바뀌면 `bun run pack:dry-run`으로 package contents를 확인한다.
 - 문서만 바꿨더라도 SSOT 링크, README와 SSOT의 behavioral claim, command 이름이 서로 맞는지 직접 읽어 검증한다.
 
 ## 금지 사항

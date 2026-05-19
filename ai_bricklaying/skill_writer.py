@@ -16,6 +16,10 @@ def write_skill(config: SummaryConfig) -> Path:
 
 def _skill_markdown(config: SummaryConfig) -> str:
     source_names = ", ".join(source.label for source in config.selected_sources)
+    metadata_path = config.output_dir / "ai-bricklaying-summary-skill.json"
+    config_path = (config.config_dir / "config.json") if config.config_dir else (Path.home() / ".config" / "ai-bricklaying" / "config.json")
+    slack_payload = config.output_dir / "ai-bricklaying-slack-payload.json"
+    slack_payload_line = f"- Slack payload file: `{slack_payload}`" if "slack-webhook" in config.output_modes else "- Slack payload file: not generated unless `slack-webhook` is selected"
     return f"""---
 name: {config.skill_name}
 description: Summarize today's AI coding agent sessions into a useful compound-engineering briefing for the user.
@@ -29,12 +33,21 @@ Use this skill when the user asks for a daily summary of AI coding work, session
 
 Default session sources: {source_names or "none selected"}.
 
+## Output Locations
+
+- Summary directory: `{config.output_dir}`
+- Metadata file: `{metadata_path}`
+- Config file: `{config_path}`
+{slack_payload_line}
+
+Use the summary directory above for final markdown files created by this skill. The configured CLI output directory is part of this skill's contract.
+
 ## Workflow
 
 1. Gather today's session history from the selected agents.
 2. Identify actual work completed, decisions made, verification evidence, failed attempts, and reusable lessons.
 3. Write the result in {config.language}.
-4. Save a markdown file even if the user also asks to send the result through Gmail or Slack.
+4. Save the markdown file under the configured summary directory even if the user also asks to send the result through Gmail or Slack.
 5. If Gmail MCP or Slack webhook delivery is requested, prepare the message using the saved configuration and clearly report any missing recipient, webhook URL, or authorization.
 
 ## Summary Template

@@ -99,8 +99,14 @@ function run(args, options = {}) {
   assert.ok(slackJson.includes('AI session summary'));
   assert.ok(slackJson.includes('test-ai-session-summary'));
   const skill = fs.readFileSync(skillPath, 'utf8');
+  assert.ok(skill.includes('## Output Locations'));
+  assert.ok(skill.includes(`Summary directory: \`${outputDir}\``));
+  assert.ok(skill.includes(`Metadata file: \`${metadataPath}\``));
+  assert.ok(skill.includes(`Config file: \`${configPath}\``));
+  assert.ok(skill.includes(`Slack payload file: \`${slackPayloadPath}\``));
+  assert.ok(skill.includes('Do not substitute the agent automation workspace'));
   assert.ok(skill.includes('This skill was generated from the CLI result with delivery modes: file, gmail-mcp, slack-webhook.'));
-  assert.ok(skill.includes('`file`: always save the final markdown summary locally'));
+  assert.ok(skill.includes(`\`file\`: always save the final markdown summary under \`${outputDir}\``));
   assert.ok(skill.includes('`gmail-mcp`: when the CLI result includes this mode'));
   assert.ok(skill.includes('post each entry in `messages`'));
   assert.ok(skill.includes('Send the JSON blocks, not the raw Markdown text'));
@@ -209,6 +215,8 @@ function run(args, options = {}) {
   assert.strictEqual(result.status, 0, result.stderr);
   const skill = fs.readFileSync(path.join(root, 'skills', skillName, 'SKILL.md'), 'utf8');
   assert.ok(skill.includes('This skill was generated from the CLI result with delivery modes: file.'));
+  assert.ok(skill.includes(`Summary directory: \`${path.join(root, 'out')}\``));
+  assert.ok(skill.includes('Slack payload file: not generated unless `slack-webhook` is selected'));
   assert.ok(skill.includes('File-only mode: do not attempt Gmail, Slack, or any external delivery'));
   assert.strictEqual(skill.includes('`gmail-mcp`: when the CLI result includes this mode'), false);
   assert.strictEqual(skill.includes('`slack-webhook`: when the CLI result includes this mode'), false);

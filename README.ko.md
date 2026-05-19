@@ -71,7 +71,7 @@ OpenCode에 설치했는데 바로 보이지 않으면 OpenCode를 재시작하�
 - `YYYY-MM-DD-ai-bricklaying-daily-summary.md`: 교훈, 개선점, 더 나은 AI 사용법 중심의 가벼운 summary.
 - `ai-bricklaying-summary-skill.json`: metadata, 선택한 target, delivery mode, summary path, generated skill directory.
 - `ai-bricklaying-slack-payload.json`: `slack-webhook` 선택 시 생성되는 Slack payload.
-- `<skill-dir>/<skill-name>/SKILL.md`: 재사용 가능한 generated skill.
+- `<skill-dir>/<skill-name>/SKILL.md`: 재사용 가능한 generated skill. 이후 agent 실행이 agent-local workspace 대신 같은 output 위치에 summary를 저장하도록 configured summary directory, metadata path, config path, Slack payload path를 포함합니다.
 
 `--skill-name`은 `daily-ai-session-summary`처럼 path-safe lowercase slug여야 합니다.
 

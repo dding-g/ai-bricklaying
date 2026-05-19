@@ -31,7 +31,8 @@
   "scripts": {
     "test": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests && node tests/cli-node.test.js",
     "pack:dry-run": "npm pack --dry-run --json",
-    "test:node": "node tests/cli-node.test.js"
+    "test:node": "node tests/cli-node.test.js",
+    "release": "git diff --quiet && git diff --cached --quiet && bun run test && bun run pack:dry-run && npm publish --access public"
   },
   "engines": {
     "node": ">=18"
@@ -43,5 +44,6 @@
   ],
   "dependencies": {
     "markdown-to-slack-blocks": "^1.5.0"
-  }
+  },
+  "packageManager": "bun@1.3.5"
 }

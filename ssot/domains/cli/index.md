@@ -384,9 +384,12 @@ outputs:
       - "frontmatter name"
       - "description"
       - "Sources"
+      - "Output Locations"
       - "CLI Result Delivery Modes"
       - "Workflow"
       - "Summary Template"
+      - "configured summary directory"
+      - "metadata/config/payload path references"
       - "file-only mode no-send instruction when only file selected"
 ```
 
@@ -503,8 +506,8 @@ policies:
     subject: "npm package"
     rules:
       - "package.json#files에 있는 파일만 npm package에 포함되는 정본 배포물이다."
-      - "package contents 변경 시 npm run pack:dry-run으로 확인한다."
-      - "Node CLI behavior 변경 시 npm test를 실행한다."
+      - "package contents 변경 시 bun run pack:dry-run으로 확인한다."
+      - "Node CLI behavior 변경 시 bun run test를 실행한다."
 ```
 
 ## 7. Query And Discovery Contract

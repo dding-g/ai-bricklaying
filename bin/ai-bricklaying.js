@@ -876,14 +876,24 @@ function writeSkill(config, target) {
   const filePath = path.join(skillDir, 'SKILL.md');
   const sourceNames = config.selectedSources.map((source) => source.label).join(', ') || 'none selected';
   const deliveryModes = config.outputModes.join(', ');
+  const metadataPath = path.join(config.outputDir, 'ai-bricklaying-summary-skill.json');
+  const configuredSlackPayloadPath = slackPayloadPath(config);
+  const outputLocationLines = [
+    `- Summary directory: \`${config.outputDir}\``,
+    `- Metadata file: \`${metadataPath}\``,
+    `- Config file: \`${configPath(config)}\``,
+    config.outputModes.includes('slack-webhook')
+      ? `- Slack payload file: \`${configuredSlackPayloadPath}\``
+      : '- Slack payload file: not generated unless `slack-webhook` is selected',
+  ];
   const deliveryInstructions = [
-    '- `file`: always save the final markdown summary locally and report the saved path.',
+    `- \`file\`: always save the final markdown summary under \`${config.outputDir}\` and report the saved path. Do not substitute the agent automation workspace unless the user explicitly asks for a different directory.`,
   ];
   if (config.outputModes.includes('gmail-mcp')) {
     deliveryInstructions.push('- `gmail-mcp`: when the CLI result includes this mode, prepare or send the saved markdown summary through Gmail MCP using the configured recipient and subject. If recipient, subject, or authorization is missing, report the exact missing requirement instead of guessing.');
   }
   if (config.outputModes.includes('slack-webhook')) {
-    deliveryInstructions.push('- `slack-webhook`: when the CLI result includes this mode, read `ai-bricklaying-slack-payload.json` and post each entry in `messages` to the saved webhook. Send the JSON blocks, not the raw Markdown text, so headings and lists render as Slack Block Kit. Report any missing webhook URL instead of exposing or inventing secrets.');
+    deliveryInstructions.push(`- \`slack-webhook\`: when the CLI result includes this mode, read \`${configuredSlackPayloadPath}\` and post each entry in \`messages\` to the saved webhook from \`${configPath(config)}\`. Send the JSON blocks, not the raw Markdown text, so headings and lists render as Slack Block Kit. Report any missing webhook URL instead of exposing or inventing secrets.`);
   }
   if (config.outputModes.length === 1 && config.outputModes[0] === 'file') {
     deliveryInstructions.push('- File-only mode: do not attempt Gmail, Slack, or any external delivery unless the user explicitly asks for a new delivery mode later.');
@@ -901,6 +911,12 @@ Use this skill when the user asks for a daily summary of AI coding work, session
 
 Default session sources: ${sourceNames}.
 
+## Output Locations
+
+${outputLocationLines.join('\n')}
+
+Use the summary directory above for final markdown files created by this skill. The configured CLI output directory is part of this skill's contract.
+
 ## CLI Result Delivery Modes
 
 This skill was generated from the CLI result with delivery modes: ${deliveryModes}.
@@ -914,7 +930,7 @@ ${deliveryInstructions.join('\n')}
 1. Gather today's session history from the selected agents.
 2. Identify actual work completed, decisions made, verification evidence, failed attempts, and reusable lessons.
 3. Write the result in ${config.language}.
-4. Apply the CLI result delivery modes above: save locally, then optionally deliver through Gmail MCP or Slack webhook only when those modes were selected.
+4. Apply the CLI result delivery modes above: save the final markdown summary under the configured summary directory, then optionally deliver through Gmail MCP or Slack webhook only when those modes were selected.
 5. Report saved files and delivery outcomes without printing secrets.
 
 ## Summary Template

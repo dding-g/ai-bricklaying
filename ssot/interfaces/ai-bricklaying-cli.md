@@ -330,6 +330,7 @@ output_files:
   - path: "<skill-dir>/<skill-name>/SKILL.md"
     required: true
     multiplicity: "one per selected target unless --skill-dir overrides all targets to same directory"
+    content_rule: "generated skill은 이후 agent 실행이 같은 위치에 summary를 저장하도록 configured output directory, metadata path, config path, optional Slack payload path를 포함한다."
     mode: "0644 best effort"
 
   - path: "<config-dir>/config.json"
@@ -376,6 +377,7 @@ generated_skill_frontmatter:
 
 generated_skill_sections:
   - Sources
+  - Output Locations
   - CLI Result Delivery Modes
   - Workflow
   - Summary Template

@@ -89,4 +89,4 @@ decisions:
 
 - CLI option, output file name, delivery behavior가 바뀌면 `ssot/interfaces/ai-bricklaying-cli.md`, `ssot/domains/cli/index.md`, `README.md`, `README.ko.md`, `tests/cli-node.test.js`를 함께 확인한다.
 - Generated skill instruction이 바뀌면 compound engineering sections와 no-send invariant가 유지되는지 확인한다.
-- npm package contents가 바뀌면 `package.json#files`와 `npm run pack:dry-run` 결과를 함께 확인한다.
+- npm package contents가 바뀌면 `package.json#files`와 `bun run pack:dry-run` 결과를 함께 확인한다.
