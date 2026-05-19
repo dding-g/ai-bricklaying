@@ -92,9 +92,11 @@ The CLI does not print the webhook secret after it is saved. Existing webhook co
 
 Slack payload behavior:
 
-- The generated summary is converted into a Slack-ready message payload.
-- Large summaries are split into a `messages` array so callers can send every batch.
+- The saved Markdown summary is the source of truth for Slack delivery.
+- The Slack payload is generated from the finalized Markdown; it is not shortened or rewritten unless you explicitly ask for a Slack-specific summary.
+- Markdown sections and bullets stay in order. Large summaries are split into a `messages` array only to satisfy Slack block length limits.
 - The first batch is also exposed as top-level `text` and `blocks` for simple webhook usage. Send `blocks` to render headings and lists properly.
+- The payload includes verification metadata showing whether every top-level Markdown section is covered.
 
 ## Gmail MCP Delivery
 

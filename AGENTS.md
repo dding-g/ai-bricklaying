@@ -52,6 +52,13 @@ bun run pack:dry-run
 - npm 배포 파일 목록이 바뀌면 `bun run pack:dry-run`으로 package contents를 확인한다.
 - 문서만 바꿨더라도 SSOT 링크, README와 SSOT의 behavioral claim, command 이름이 서로 맞는지 직접 읽어 검증한다.
 
+## Release Notes
+
+- Release command: `bun run release` (interactive `release-it` flow).
+- Versioned releases bump `package.json`, create a `v<version>` tag, create a GitHub release, and publish the npm package with public access.
+- Release hooks run `bun run test` before initialization and `bun run pack:dry-run` after the version bump.
+- If release is interrupted, inspect `package.json`, `bun.lock`, git tags, and npm/GitHub release state before retrying.
+
 ## 금지 사항
 
 - Secret 값을 README, SSOT, generated summary example에 실제 값으로 넣지 않는다.

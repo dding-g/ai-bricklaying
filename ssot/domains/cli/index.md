@@ -198,8 +198,13 @@ usecases:
     interactive_behavior:
       - "interactive mode에서는 Slack webhook 입력이 optional이며 missing이면 not provided/configured false로 기록한다."
     postconditions:
+      - "저장된 Markdown summary가 Slack payload 생성의 source of truth다."
+      - "Slack payload는 Markdown 최종본에서 생성하며 별도 short summary로 재작성하지 않는다."
+      - "Markdown의 모든 top-level section과 bullet 순서를 유지한다."
+      - "Slack length limit 대응은 block/message batch 분리로만 수행한다."
       - "top-level text와 blocks는 first batch를 담는다."
       - "messages 배열은 모든 batch를 담는다."
+      - "verification은 모든 top-level section이 payload에 포함됐는지 기록한다."
     external_send: false
 
   - id: UC_PREPARE_GMAIL_HANDOFF
@@ -222,6 +227,8 @@ usecases:
       - "delivery mode section은 current run의 selected modes만 설명한다."
       - "file-only mode에서는 Gmail/Slack을 시도하지 말라는 guardrail을 포함한다."
       - "gmail/slack mode에서는 missing recipient/webhook/auth를 추측하지 말고 보고하라고 지시한다."
+      - "slack-webhook mode에서는 saved Markdown을 Slack delivery source of truth로 삼고, Markdown 최종본에서 Block Kit payload를 만들며, 사용자 명시 없이는 Slack 전용 short summary를 만들지 말라는 guardrail을 포함한다."
+      - "slack-webhook mode에서는 Markdown section/bullet order 유지와 전송 전 top-level section coverage 검증을 지시한다."
 
   - id: UC_PRINT_COMPLETION
     trigger: "all artifacts written"
@@ -506,6 +513,7 @@ policies:
     subject: "npm package"
     rules:
       - "package.json#files에 있는 파일만 npm package에 포함되는 정본 배포물이다."
+      - "maintainer release command는 bun run release이며 release-it이 version bump, git tag, GitHub release, npm publish를 수행한다."
       - "package contents 변경 시 bun run pack:dry-run으로 확인한다."
       - "Node CLI behavior 변경 시 bun run test를 실행한다."
 ```

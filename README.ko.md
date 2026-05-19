@@ -92,9 +92,11 @@ Webhook URL은 저장된 뒤 다시 출력되지 않습니다. 기존 config에 
 
 Slack payload 동작:
 
-- 생성된 summary를 Slack 전송용 message payload로 변환합니다.
-- 긴 summary는 `messages` 배열로 나뉘어 모든 batch를 전송할 수 있습니다.
+- 저장된 Markdown summary를 Slack 전달의 source of truth로 사용합니다.
+- Slack payload는 확정된 Markdown에서 생성하며, 사용자가 명시하지 않으면 Slack 전용 짧은 요약으로 줄이거나 재작성하지 않습니다.
+- Markdown 섹션과 bullet 순서는 유지합니다. 긴 summary는 Slack block length limit을 맞추기 위해서만 `messages` 배열로 나눕니다.
 - 간단한 webhook 사용을 위해 첫 batch는 top-level `text`와 `blocks`에도 들어갑니다. Heading과 list가 제대로 보이려면 `blocks`를 전송하세요.
+- Payload에는 모든 top-level Markdown section이 포함됐는지 확인하는 verification metadata가 들어갑니다.
 
 ## Gmail MCP 전달
 

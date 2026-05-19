@@ -1,0 +1,32 @@
+{
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}",
+    "pushArgs": [
+      "--follow-tags"
+    ],
+    "requireUpstream": false,
+    "pushRepo": "origin"
+  },
+  "github": {
+    "release": true,
+    "releaseName": "v${version}",
+    "releaseNotes": "git log --pretty=format:'- %s (%h)' $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~10)..HEAD"
+  },
+  "npm": {
+    "publish": true,
+    "publishArgs": [
+      "--access",
+      "public"
+    ]
+  },
+  "hooks": {
+    "before:init": [
+      "bun run test"
+    ],
+    "after:bump": [
+      "bun run pack:dry-run"
+    ],
+    "after:release": "echo Successfully released ${name} v${version}"
+  }
+}

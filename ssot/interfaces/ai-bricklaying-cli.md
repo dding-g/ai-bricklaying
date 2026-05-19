@@ -325,12 +325,13 @@ output_files:
 
   - path: "<output-dir>/ai-bricklaying-slack-payload.json"
     required_when: "slack-webhook selected"
+    content_rule: "저장된 Markdown summary 최종본을 source of truth로 사용해 생성하며 별도 Slack short summary로 재작성하지 않는다."
     mode: "0644 best effort"
 
   - path: "<skill-dir>/<skill-name>/SKILL.md"
     required: true
     multiplicity: "one per selected target unless --skill-dir overrides all targets to same directory"
-    content_rule: "generated skill은 이후 agent 실행이 같은 위치에 summary를 저장하도록 configured output directory, metadata path, config path, optional Slack payload path를 포함한다."
+    content_rule: "generated skill은 이후 agent 실행이 같은 위치에 summary를 저장하도록 configured output directory, metadata path, config path, optional Slack payload path를 포함한다. slack-webhook mode에서는 saved Markdown source-of-truth, Block Kit payload 생성, Slack 전용 short summary 금지, section/bullet order 유지, top-level section coverage 검증 지침을 포함한다."
     mode: "0644 best effort"
 
   - path: "<config-dir>/config.json"
@@ -367,7 +368,14 @@ slack_payload_json:
     item:
       text: "fallback text with batch suffix when split"
       blocks: "Block Kit blocks"
-  split_rule: "large summaries may be split by markdown-to-slack-blocks splitBlocksWithText"
+  source_of_truth: "saved Markdown summary"
+  split_rule: "large summaries may be split by markdown-to-slack-blocks splitBlocksWithText only to satisfy Slack block length limits"
+  order_rule: "Markdown sections and bullets stay in source order"
+  verification:
+    source: "saved_markdown"
+    top_level_sections: "string[]"
+    covered_top_level_sections: "string[]"
+    all_top_level_sections_covered: "boolean"
 ```
 
 ```yaml

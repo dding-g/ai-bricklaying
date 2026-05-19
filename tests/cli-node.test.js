@@ -89,6 +89,10 @@ function run(args, options = {}) {
   assert.strictEqual(slackPayload.text.includes('##'), false);
   assert.ok(Array.isArray(slackPayload.messages));
   assert.ok(slackPayload.messages.length >= 1);
+  assert.strictEqual(slackPayload.verification.source, 'saved_markdown');
+  assert.ok(slackPayload.verification.top_level_sections.includes("Today's Takeaways"));
+  assert.ok(slackPayload.verification.covered_top_level_sections.includes("Today's Takeaways"));
+  assert.strictEqual(slackPayload.verification.all_top_level_sections_covered, true);
   assert.strictEqual(slackPayload.messages[0].text.includes('##'), false);
   assert.ok(slackPayload.blocks.some((block) => block.type === 'header'));
   assert.ok(slackJson.includes("Today&apos;s Takeaways") || slackJson.includes("Today's Takeaways"));
@@ -110,6 +114,11 @@ function run(args, options = {}) {
   assert.ok(skill.includes('`gmail-mcp`: when the CLI result includes this mode'));
   assert.ok(skill.includes('post each entry in `messages`'));
   assert.ok(skill.includes('Send the JSON blocks, not the raw Markdown text'));
+  assert.ok(skill.includes('Slack payload content must mirror the saved Markdown summary'));
+  assert.ok(skill.includes('Treat the saved Markdown file as the source of truth for Slack delivery'));
+  assert.ok(skill.includes('Do not send a shortened, rewritten, or separately summarized Slack version'));
+  assert.ok(skill.includes('Preserve all Markdown sections and bullets in order'));
+  assert.ok(skill.includes('verify that the Slack payload covers every top-level section'));
   assert.ok(result.stdout.includes('Restart OpenCode or open a new session'));
   assert.ok(result.stdout.includes('Use the generated skill: /test-ai-session-summary'));
   assert.ok(result.stdout.includes('npm install -g ai-bricklaying@latest && ai-bricklaying'));

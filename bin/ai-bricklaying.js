@@ -775,12 +775,34 @@ function buildSlackPayload(markdown) {
     blocks: message.blocks,
   }));
   const [firstMessage] = messages;
+  const topLevelSections = markdownTopLevelSections(markdown);
+  const blockText = messages
+    .flatMap((message) => message.blocks)
+    .map((block) => [block.text?.text, ...((block.elements || []).map((element) => element.text || element.value))])
+    .flat()
+    .filter(Boolean)
+    .join('\n');
+  const coveredTopLevelSections = topLevelSections.filter((section) => blockText.includes(section));
 
   return {
     text: firstMessage ? firstMessage.text : slackFallbackText(markdown),
     blocks: firstMessage ? firstMessage.blocks : [],
     messages,
+    verification: {
+      source: 'saved_markdown',
+      top_level_sections: topLevelSections,
+      covered_top_level_sections: coveredTopLevelSections,
+      all_top_level_sections_covered: topLevelSections.length === coveredTopLevelSections.length,
+    },
   };
+}
+
+function markdownTopLevelSections(markdown) {
+  return String(markdown)
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('## ') && !line.startsWith('### '))
+    .map((line) => line.replace(/^##\s+/, '').trim())
+    .filter(Boolean);
 }
 
 function ensureDir(dirPath, mode = 0o755) {
@@ -898,6 +920,15 @@ function writeSkill(config, target) {
   if (config.outputModes.length === 1 && config.outputModes[0] === 'file') {
     deliveryInstructions.push('- File-only mode: do not attempt Gmail, Slack, or any external delivery unless the user explicitly asks for a new delivery mode later.');
   }
+  const slackPayloadContract = config.outputModes.includes('slack-webhook') ? `
+Slack payload content must mirror the saved Markdown summary:
+
+- Treat the saved Markdown file as the source of truth for Slack delivery.
+- Generate or update \`ai-bricklaying-slack-payload.json\` from the saved Markdown content after the Markdown file is finalized.
+- Do not send a shortened, rewritten, or separately summarized Slack version unless the user explicitly asks for a Slack-specific summary.
+- Preserve all Markdown sections and bullets in order. Convert headings and lists into Slack Block Kit \`blocks\`; split long sections only to satisfy Slack block length limits.
+- Before posting, verify that the Slack payload covers every top-level section in the saved Markdown summary.
+` : '';
   const markdown = `---
 name: ${config.skillName}
 description: Summarize today's AI coding agent sessions into a useful compound-engineering briefing for the user.
@@ -924,13 +955,14 @@ This skill was generated from the CLI result with delivery modes: ${deliveryMode
 Follow the CLI-selected delivery modes exactly:
 
 ${deliveryInstructions.join('\n')}
+${slackPayloadContract}
 
 ## Workflow
 
 1. Gather today's session history from the selected agents.
 2. Identify actual work completed, decisions made, verification evidence, failed attempts, and reusable lessons.
 3. Write the result in ${config.language}.
-4. Apply the CLI result delivery modes above: save the final markdown summary under the configured summary directory, then optionally deliver through Gmail MCP or Slack webhook only when those modes were selected.
+4. Apply the CLI result delivery modes above: save the final markdown summary under the configured summary directory, then optionally deliver through Gmail MCP or Slack webhook only when those modes were selected. For Slack delivery, generate the Block Kit payload from the saved Markdown summary so Slack receives the same content in Slack-native formatting.
 5. Report saved files and delivery outcomes without printing secrets.
 
 ## Summary Template
