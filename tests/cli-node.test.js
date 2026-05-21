@@ -415,4 +415,13 @@ function run(args, options = {}) {
   assert.strictEqual(summary.includes('abc123'), false);
 })();
 
-console.log('Node CLI tests passed');
+Promise.resolve()
+  .then(() => require('./launcher.test')())
+  .then(() => require('./contracts/semantic-contracts')({ run, tempRoot, summaryPath, packageJson, cli }))
+  .then(() => {
+    console.log('Node CLI tests passed');
+  })
+  .catch((error) => {
+    console.error(error.stack || error.message || error);
+    process.exit(1);
+  });

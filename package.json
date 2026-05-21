@@ -25,13 +25,20 @@
   "files": [
     "assets/ai-bricklaying.png",
     "bin/ai-bricklaying.js",
+    "dist/ai-bricklaying-darwin-amd64",
+    "dist/ai-bricklaying-darwin-arm64",
+    "dist/ai-bricklaying-linux-amd64",
+    "dist/ai-bricklaying-linux-arm64",
     "README.md",
     "README.ko.md"
   ],
   "scripts": {
-    "test": "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests && node tests/cli-node.test.js",
-    "pack:dry-run": "npm pack --dry-run --json",
+    "build:go": "node scripts/build-go.mjs",
+    "test": "go test ./... && node tests/cli-node.test.js",
+    "test:go": "go test ./...",
     "test:node": "node tests/cli-node.test.js",
+    "pack:dry-run": "node scripts/pack-dry-run.mjs",
+    "prepack": "node scripts/build-go.mjs",
     "release": "release-it",
     "release:patch": "release-it patch",
     "release:minor": "release-it minor",
@@ -45,9 +52,6 @@
     "linux",
     "win32"
   ],
-  "dependencies": {
-    "markdown-to-slack-blocks": "^1.5.0"
-  },
   "packageManager": "bun@1.3.5",
   "devDependencies": {
     "release-it": "^17.0.0"

@@ -18,8 +18,11 @@
 
 ## Requirements
 
-- Node.js 18 or newer
 - npm or npx
+- Node.js 18 or newer when you run the npm or npx launcher
+- A first-release supported platform: `darwin-arm64`, `darwin-amd64`, `linux-amd64`, or `linux-arm64`
+
+The CLI behavior is implemented by a bundled Go binary. The npm package keeps `bin/ai-bricklaying.js` as a small launcher that selects the matching binary and forwards your command.
 
 ## Install
 
@@ -39,6 +42,8 @@ Check your installed version:
 ```bash
 ai-bricklaying --version
 ```
+
+If your platform is not one of the bundled first-release targets, the launcher exits with an unsupported platform message instead of falling back to a different implementation.
 
 ## Interactive Setup
 
@@ -77,7 +82,7 @@ By default, file outputs are written to `~/ai-bricklaying`. Use `--output-dir` t
 
 ## Slack Delivery
 
-Select `slack-webhook` to create a Slack-ready payload.
+Select `slack-webhook` to create a Slack-ready payload. The CLI prepares local files only; it does not call the webhook for you.
 
 ```bash
 ai-bricklaying \
@@ -100,7 +105,7 @@ Slack payload behavior:
 
 ## Gmail MCP Delivery
 
-Select `gmail-mcp` when you want the generated skill instructions and summary metadata to include Gmail MCP delivery details.
+Select `gmail-mcp` when you want the generated skill instructions and summary metadata to include Gmail MCP delivery details. The CLI prepares handoff details only; it does not send email.
 
 ```bash
 ai-bricklaying \
@@ -128,7 +133,7 @@ Command-line flags always override saved config. Use `--config-dir` to use a dif
 
 ## Keeping It Updated
 
-Update the CLI from npm, then run it again to refresh the generated skill:
+Update the npm package, including its bundled Go binary, then run the CLI again to refresh the generated skill:
 
 ```bash
 npm install -g ai-bricklaying@latest
@@ -194,7 +199,7 @@ Use it as:
 --target-model <label>            Model label recorded in generated artifacts
 --sources, --sessions <source>    Single session source to summarize
 --language <language>             Language for the generated summary [English]
---output-modes, --delivery <list> file, gmail-mcp, slack-webhook
+--output-modes, --delivery <list> file, gmail-mcp, slack-webhook; file is always enabled
 --skill-name <slug>               Generated skill directory name
 --skill-dir <dir>                 Directory where the skill folder is written
 --output-dir <dir>                Directory for summary files [~/ai-bricklaying]

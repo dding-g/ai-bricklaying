@@ -14,11 +14,23 @@ ref:
 ```yaml
 interface:
   name: ai-bricklaying
-  implementation_language: Node.js
+  implementation_language: Go
   executable: ai-bricklaying
-  package_entrypoint: bin/ai-bricklaying.js
+  implementation_binary: "dist/ai-bricklaying-<platform>-<arch>"
+  npm_launcher: bin/ai-bricklaying.js
   package_bin_field: package.json#bin.ai-bricklaying
-  minimum_node: ">=18"
+  launcher_runtime_node: ">=18 when invoked through npm or npx"
+  shipped_binaries:
+    - darwin-arm64
+    - darwin-amd64
+    - linux-amd64
+    - linux-arm64
+  unsupported_platform_exit:
+    code: 1
+    stderr: "ai-bricklaying: unsupported platform <platform>-<arch>; supported binaries: darwin-arm64, darwin-amd64, linux-amd64, linux-arm64"
+  missing_binary_exit:
+    code: 1
+    stderr: "ai-bricklaying: bundled binary not found for <platform>-<arch>; reinstall the package or report a release packaging issue"
   invocation_modes:
     - interactive wizard
     - non-interactive flags
@@ -29,11 +41,12 @@ interface:
     - AI coding agent that prepares daily reflection artifacts
   source_of_truth:
     - ssot/domains/cli/index.md
-    - bin/ai-bricklaying.js
+    - Go internal CLI packages
+    - bin/ai-bricklaying.js launcher contract
     - tests/cli-node.test.js
 ```
 
-이 문서는 public npm CLI의 외부 interface 계약을 정의한다. Python package의 `ai_bricklaying.cli`는 regression surface일 수 있지만 npm 사용자가 호출하는 interface 정본은 아니다.
+이 문서는 public npm CLI의 외부 interface 계약을 정의한다. `ai-bricklaying` 실행 파일의 동작은 bundled Go binary가 구현하며, `bin/ai-bricklaying.js`는 npm과 npx 사용자를 위해 platform binary를 찾아 인자, stdio, signal, exit code를 전달하는 launcher다. Legacy Python package surface는 Go contract equivalent 통과 후 제거되었으며, npm 사용자가 호출하는 interface 정본이 아니다.
 
 ## 2. Command Model
 
@@ -61,7 +74,7 @@ commands:
 
   - command: "ai-bricklaying --version"
     mode: information
-    behavior: "package.json version을 stdout에 출력하고 artifact를 쓰지 않는다."
+    behavior: "npm package version을 stdout에 출력하고 artifact를 쓰지 않는다."
 ```
 
 ## 3. Flags And Aliases
@@ -369,7 +382,7 @@ slack_payload_json:
       text: "fallback text with batch suffix when split"
       blocks: "Block Kit blocks"
   source_of_truth: "saved Markdown summary"
-  split_rule: "large summaries may be split by markdown-to-slack-blocks splitBlocksWithText only to satisfy Slack block length limits"
+  split_rule: "large summaries may be split only to satisfy Slack block length limits"
   order_rule: "Markdown sections and bullets stay in source order"
   verification:
     source: "saved_markdown"

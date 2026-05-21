@@ -20,8 +20,8 @@ ref:
 
 - 흐름은 `SSOT -> implementation/docs/tests -> generated artifacts` 단방향으로 본다.
 - README는 사용자 문서이고 SSOT는 계약 문서다. README가 SSOT보다 새 behavior를 먼저 선언하면 drift로 본다.
-- Public npm behavior는 `package.json`의 `bin.ai-bricklaying`이 가리키는 `bin/ai-bricklaying.js`를 기준으로 판단한다.
-- Python package surface는 테스트 대상이지만 npm 배포 계약을 자동 대표하지 않는다.
+- Public npm invocation은 `package.json`의 `bin.ai-bricklaying`이 가리키는 `bin/ai-bricklaying.js`를 기준으로 판단한다. CLI behavior 구현 정본은 bundled Go binary이며 JS file은 launcher 역할만 한다.
+- Legacy Python package surface는 Go contract equivalent 통과 후 제거되었으며 npm 배포 계약을 대표하지 않는다.
 - External delivery는 opt-in이다. `file` save는 항상 수행한다.
 - Secret은 정본 예시에서도 실제 값처럼 보이게 쓰지 않는다. 예시는 `https://hooks.slack.com/services/...`처럼 축약한다.
 - Compound engineering 품질은 출력 template의 필수 기능이다. 요약은 `lessons`, `evidence`, `better AI usage`, `follow-up prompt`를 포함해야 한다.
@@ -113,8 +113,8 @@ ref:
 ### 7.2 계약 정합성 검증
 
 - README의 CLI option 목록이 SSOT usecase와 맞는가
-- `package.json`의 `bin`, `files`, `scripts`가 SSOT의 배포/검증 설명과 맞는가
-- Node CLI test가 SSOT acceptance matrix의 핵심 behavior를 검증하는가
+- `package.json`의 `bin`, `files`, `scripts`와 `dist/` binary 목록이 SSOT의 배포/검증 설명과 맞는가
+- Go contract test와 npm launcher test가 SSOT acceptance matrix의 핵심 behavior를 검증하는가
 - Generated artifact 이름이 README, SSOT, test에서 서로 일치하는가
 
 ### 7.3 Compound engineering 검증

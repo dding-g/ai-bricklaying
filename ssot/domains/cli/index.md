@@ -17,12 +17,14 @@ CLI 도메인은 AI session source 선택, local session discovery, daily summar
 ```yaml
 service:
   name: ai-bricklaying
-  interface: Node.js CLI
-  public_entrypoint: bin/ai-bricklaying.js
+  interface: Go CLI
+  implementation_binary: "dist/ai-bricklaying-<platform>-<arch>"
+  npm_launcher: bin/ai-bricklaying.js
   package_bin: ai-bricklaying
   primary_distribution: npm
-  minimum_node: ">=18"
-  supported_os: [darwin, linux, win32]
+  launcher_runtime_node: ">=18 when invoked through npm or npx"
+  first_release_binaries: [darwin-arm64, darwin-amd64, linux-amd64, linux-arm64]
+  unsupported_platform_exit: 1
   core_value: "AI coding session history를 매일 재사용 가능한 회고와 skill instruction으로 축적한다."
 ```
 
@@ -36,6 +38,7 @@ service:
 ### Interface 관계
 
 - Command, flag, stdout/stderr, exit code의 외부 interface는 `ssot/interfaces/ai-bricklaying-cli.md`가 정본이다.
+- npm 사용자는 계속 `ai-bricklaying` 또는 `npx ai-bricklaying`을 호출한다. npm package의 `bin/ai-bricklaying.js`는 bundled Go binary를 실행하는 launcher이며, CLI product behavior는 Go binary가 구현한다.
 - 이 문서는 그 interface가 어떤 제품 usecase, output artifact, invariant, acceptance에 연결되는지 정의한다.
 
 ### 포함 범위
@@ -55,7 +58,7 @@ service:
 
 - LLM API를 호출해 abstractive summary를 생성하는 기능
 - CLI가 Gmail MCP를 직접 호출해 email을 보내는 기능
-- CLI가 Slack webhook으로 즉시 전송하는 기능
+- CLI가 Slack webhook을 호출해 message를 보내는 기능
 - Remote/cloud session history 동기화
 - Secret vault 관리
 - Generated artifact를 정본 문서로 관리하는 workflow
@@ -75,7 +78,7 @@ usecases:
   - id: UC_SHOW_VERSION
     trigger: "ai-bricklaying --version 또는 -v"
     actor: user_or_automation
-    purpose: "설치된 package version을 확인한다."
+    purpose: "설치된 npm package version을 확인한다."
     outputs: [stdout_version]
     artifact_write: false
     exit_code: 0
@@ -248,7 +251,7 @@ usecases:
   - id: UC_REFRESH_GENERATED_SKILL
     trigger: "npm install -g ai-bricklaying@latest && ai-bricklaying"
     actor: user
-    purpose: "CLI 업데이트 후 기존 config defaults로 generated skill을 재생성한다."
+    purpose: "npm package 업데이트 후 기존 config defaults로 generated skill을 재생성한다."
     postconditions:
       - "selected target skill directory의 SKILL.md가 최신 template으로 갱신된다."
 ```
@@ -513,9 +516,11 @@ policies:
     subject: "npm package"
     rules:
       - "package.json#files에 있는 파일만 npm package에 포함되는 정본 배포물이다."
+      - "first release package에는 darwin-arm64, darwin-amd64, linux-amd64, linux-arm64 Go binary만 포함한다. Windows binary는 first release shipped target이 아니다."
+      - "bin/ai-bricklaying.js는 npm launcher로 유지하며 CLI implementation logic을 중복 구현하지 않는다."
       - "maintainer release command는 bun run release이며 release-it이 version bump, git tag, GitHub release, npm publish를 수행한다."
       - "package contents 변경 시 bun run pack:dry-run으로 확인한다."
-      - "Node CLI behavior 변경 시 bun run test를 실행한다."
+      - "Go CLI behavior나 npm launcher behavior 변경 시 bun run test를 실행한다."
 ```
 
 ## 7. Query And Discovery Contract
@@ -556,9 +561,9 @@ discovery_rules:
 
 ```yaml
 external_dependencies:
-  - name: markdown-to-slack-blocks
+  - name: internal Slack payload converter
     used_by: "Slack payload generation"
-    package_source: package.json#dependencies
+    package_source: "bundled Go implementation"
     failure_mapping: "Unexpected runtime failure unless explicitly converted; file summary invariant should be checked after any change."
   - name: Gmail MCP
     used_by: "handoff instruction only"

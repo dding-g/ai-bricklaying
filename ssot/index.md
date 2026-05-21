@@ -31,18 +31,22 @@ canonical_scope:
     - README.md
     - README.ko.md
   current_public_cli_entrypoint:
-    - bin/ai-bricklaying.js
+    - bin/ai-bricklaying.js npm launcher
+  runtime_implementation:
+    - bundled Go binaries under dist/
   npm_package_files:
     - assets/ai-bricklaying.png
     - bin/ai-bricklaying.js
+    - dist/ai-bricklaying-darwin-arm64
+    - dist/ai-bricklaying-darwin-amd64
+    - dist/ai-bricklaying-linux-amd64
+    - dist/ai-bricklaying-linux-arm64
     - README.md
     - README.ko.md
     - package.json
   verification:
     - tests/cli-node.test.js
-    - tests/test_cli.py
-    - tests/test_session_sources.py
-    - tests/test_summary.py
+    - Go contract tests
 ```
 
 ## 제품 정의
@@ -58,10 +62,14 @@ canonical_scope:
 ```yaml
 decisions:
   - id: CLI_RUNTIME_PUBLIC_ENTRYPOINT
-    decision: "npm package의 public entrypoint는 bin/ai-bricklaying.js다."
+    decision: "npm package의 public entrypoint는 bin/ai-bricklaying.js launcher이며 CLI behavior는 bundled Go binary가 구현한다."
     evidence:
       - package.json#bin
       - package.json#files
+      - dist/ai-bricklaying-darwin-arm64
+      - dist/ai-bricklaying-darwin-amd64
+      - dist/ai-bricklaying-linux-amd64
+      - dist/ai-bricklaying-linux-arm64
   - id: SINGLE_SUMMARY_SOURCE
     decision: "한 번의 summary run은 하나의 session source만 요약한다."
     evidence:

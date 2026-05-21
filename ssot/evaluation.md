@@ -41,8 +41,8 @@ current_assessment:
 
 - `README.md`와 `README.ko.md`는 사용자 flow, output modes, config defaults, install path를 잘 설명한다.
 - `tests/cli-node.test.js`는 no-send, Slack payload, config defaults, secret redaction, path safety, source validation을 강하게 검증한다.
-- `package.json`은 npm public entrypoint를 `bin/ai-bricklaying.js`로 고정한다.
-- Python package와 Node CLI가 동시에 존재하므로, 변경자는 public npm behavior와 Python regression surface를 혼동하지 않아야 한다.
+- `package.json`은 npm public entrypoint를 `bin/ai-bricklaying.js` launcher로 고정하고, CLI behavior는 bundled Go binary가 구현한다.
+- Legacy Python package surface는 Go contract equivalent 통과 후 제거되었으므로, 변경자는 public npm invocation과 Go CLI contract를 기준으로 판단해야 한다.
 - 과거 session 결정에서 확인된 핵심 철학은 `mandatory file save`, `no implicit external send`, `compound engineering summary sections`, `missing session still produces artifact`다.
 
 ## Drift 위험
@@ -50,8 +50,8 @@ current_assessment:
 ```yaml
 drift_risks:
   - id: DUAL_RUNTIME_CONFUSION
-    risk: "Python package와 Node CLI가 서로 다른 behavior를 갖게 될 수 있다."
-    mitigation: "AGENTS.md와 SSOT에서 npm public entrypoint를 명시하고, 변경 시 두 test surface를 확인한다."
+    risk: "제거된 Python package surface가 문서나 테스트 기대값에 남아 Go CLI contract와 혼동될 수 있다."
+    mitigation: "AGENTS.md와 SSOT에서 npm launcher와 Go implementation binary의 역할을 분리하고, 변경 시 Go/Node contract tests를 확인한다."
 
   - id: README_FIRST_CONTRACT
     risk: "README에 새 option이나 delivery promise가 먼저 추가될 수 있다."
@@ -77,8 +77,8 @@ improvements:
 
   - id: I_RUNTIME_DECISION_RECORD
     priority: high
-    change: "Node CLI와 Python package의 관계를 별도 ADR 또는 README maintainer note로 정리한다."
-    reason: "현재 public npm path와 Python tests가 공존해 신규 agent가 entrypoint를 혼동할 수 있다."
+    change: "npm launcher와 Go implementation binary의 관계를 별도 ADR 또는 README maintainer note로 정리한다."
+    reason: "npm invocation은 유지되지만 runtime 구현이 Go로 이동하므로 신규 agent가 launcher와 implementation을 혼동할 수 있다."
 
   - id: I_DOC_LINK_FROM_README
     priority: medium
@@ -116,7 +116,7 @@ review_checklist:
   - "ssot/interfaces/ai-bricklaying-cli.md의 flag/stdout/exit/artifact 계약이 변경 behavior를 설명하는가"
   - "ssot/domains/cli/index.md의 usecase와 acceptance가 변경 behavior를 설명하는가"
   - "README.md와 README.ko.md가 같은 사용자 약속을 말하는가"
-  - "tests/cli-node.test.js 또는 Python tests가 변경된 계약을 검증하는가"
+  - "tests/cli-node.test.js와 Go contract tests가 변경된 계약을 검증하는가"
   - "file save always-on invariant가 유지되는가"
   - "Gmail/Slack no implicit send invariant가 유지되는가"
   - "secret redaction과 private config permission이 약화되지 않았는가"

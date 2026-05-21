@@ -8,10 +8,10 @@
 
 ## 현재 구조
 
-- `bin/ai-bricklaying.js`: npm package의 public CLI entrypoint이자 현재 배포 정본 구현이다.
-- `ai_bricklaying/*`: Python package surface와 테스트 대상 구현이다. npm 배포 파일 목록에는 포함되지 않으므로 public npm behavior를 판단할 때는 `bin/ai-bricklaying.js`를 우선한다.
+- `bin/ai-bricklaying.js`: npm package의 public CLI entrypoint이자 bundled Go binary를 실행하는 launcher다.
+- legacy `ai_bricklaying/*` Python package surface는 Go contract replacement 이후 제거되었다. public npm behavior를 판단할 때는 `bin/ai-bricklaying.js`와 bundled Go binary를 기준으로 한다.
 - `tests/cli-node.test.js`: npm CLI acceptance와 보안/출력 회귀 테스트다.
-- `tests/test_*.py`: Python package behavior regression 테스트다.
+- `tests/contracts/python-surface-mapping.md`: 제거된 Python regression test category가 현재 Go/Node contract coverage로 어디에 보존되는지 기록한다.
 - `README.md`, `README.ko.md`: 사용자-facing 설치, 옵션, delivery behavior 설명이다.
 - `ssot/rules.md`: SSOT 작성/검증 규칙이다.
 - `ssot/interfaces/ai-bricklaying-cli.md`: CLI command, flag, stdout/stderr, exit code, artifact path interface 계약이다.
@@ -20,7 +20,7 @@
 
 ## 정본과 생성물
 
-- 제품 계약 정본은 `ssot/*`와 `bin/ai-bricklaying.js`의 현재 CLI behavior다.
+- 제품 계약 정본은 `ssot/*`와 `bin/ai-bricklaying.js`의 launcher behavior, bundled Go binary의 현재 CLI behavior다.
 - npm 배포 정본은 `package.json`의 `bin`과 `files` 필드를 따른다.
 - `1/*`, `summaries/*`, generated skill directories, `ai-bricklaying-summary-skill.json`, `ai-bricklaying-slack-payload.json`은 실행 결과물이다. 테스트 fixture가 아닌 한 정본처럼 수정하지 않는다.
 - `opencode.json`은 제품 runtime 계약이 아니다. Team mode 활성 여부나 CLI behavior 판단 근거로 사용하지 않는다.

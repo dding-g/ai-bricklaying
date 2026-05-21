@@ -4,7 +4,7 @@
   <img src="assets/ai-bricklaying.png" alt="ai-bricklaying logo" style="width:400px;"/>
 </p>
 
-`ai-bricklaying`은 AI 코딩 세션 기록을 가벼운 하루 회고로 만들고, 사용 중인 AI 도구에 재사용 가능한 skill을 설치해 주는 Node.js CLI입니다. 오늘 얻은 교훈, 개선한 점, 다음에 AI를 더 잘 쓰는 방법을 남기고 싶은 사용자를 위한 도구입니다.
+`ai-bricklaying`은 AI 코딩 세션 기록을 가벼운 하루 회고로 만들고, 사용 중인 AI 도구에 재사용 가능한 skill을 설치해 주는 CLI입니다. CLI 동작은 bundled Go binary가 구현하고, npm package는 작은 JS launcher로 해당 binary를 실행합니다. 오늘 얻은 교훈, 개선한 점, 다음에 AI를 더 잘 쓰는 방법을 남기고 싶은 사용자를 위한 도구입니다.
 
 ## 하는 일
 
@@ -18,8 +18,11 @@
 
 ## 요구사항
 
-- Node.js 18 이상
 - npm 또는 npx
+- npm 또는 npx launcher로 실행할 때 Node.js 18 이상
+- First release 지원 platform: `darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`
+
+CLI 동작은 bundled Go binary가 구현합니다. npm package의 `bin/ai-bricklaying.js`는 현재 platform에 맞는 binary를 고르고 명령을 전달하는 작은 launcher입니다.
 
 ## 설치
 
@@ -39,6 +42,8 @@ npx ai-bricklaying --help
 ```bash
 ai-bricklaying --version
 ```
+
+Platform이 first release bundled target에 없으면 launcher는 다른 구현으로 fallback하지 않고 unsupported platform message로 종료합니다.
 
 ## 대화형 설정
 
@@ -77,7 +82,7 @@ OpenCode에 설치했는데 바로 보이지 않으면 OpenCode를 재시작하�
 
 ## Slack 전달
 
-Slack으로 보낼 payload를 만들려면 `slack-webhook`을 선택합니다.
+Slack으로 보낼 payload를 만들려면 `slack-webhook`을 선택합니다. CLI는 local file만 준비하며 webhook을 호출하지 않습니다.
 
 ```bash
 ai-bricklaying \
@@ -100,7 +105,7 @@ Slack payload 동작:
 
 ## Gmail MCP 전달
 
-Gmail MCP로 보낼 계획이라면 `gmail-mcp`를 선택합니다.
+Gmail MCP로 보낼 계획이라면 `gmail-mcp`를 선택합니다. CLI는 handoff 정보만 준비하며 email을 보내지 않습니다.
 
 ```bash
 ai-bricklaying \
@@ -128,7 +133,7 @@ Command-line flag는 항상 저장된 config보다 우선합니다. 테스트나
 
 ## 최신화 방법
 
-npm에서 CLI를 업데이트한 뒤 다시 실행하면 generated skill을 새 버전으로 갱신할 수 있습니다.
+Bundled Go binary를 포함한 npm package를 업데이트한 뒤 다시 실행하면 generated skill을 새 버전으로 갱신할 수 있습니다.
 
 ```bash
 npm install -g ai-bricklaying@latest
@@ -194,7 +199,7 @@ ai-bricklaying \
 --target-model <label>            생성 artifact에 기록할 model label
 --sources, --sessions <source>    요약할 session source 하나
 --language <language>             summary 언어 [English]
---output-modes, --delivery <list> file, gmail-mcp, slack-webhook
+--output-modes, --delivery <list> file, gmail-mcp, slack-webhook; file은 항상 켜짐
 --skill-name <slug>               generated skill directory name
 --skill-dir <dir>                 skill folder를 저장할 directory
 --output-dir <dir>                summary file 저장 directory [~/ai-bricklaying]
