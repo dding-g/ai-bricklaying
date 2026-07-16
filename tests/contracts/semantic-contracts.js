@@ -156,7 +156,7 @@ function testValidationContracts({ run, tempRoot, summaryPath }) {
     '--config-dir', path.join(unsafeRoot, 'config'),
   ]);
   assert.strictEqual(unsafe.status, 2);
-  assert.ok(unsafe.stderr.includes('--skill-name must be a path-safe slug'));
+  assert.ok(unsafe.stderr.includes('--skill-name must be 1-64 lowercase letters'));
   assert.strictEqual(fs.existsSync(path.join(unsafeRoot, 'escape')), false);
 
   if (process.platform !== 'win32') {

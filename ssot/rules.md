@@ -22,9 +22,12 @@ ref:
 - README는 사용자 문서이고 SSOT는 계약 문서다. README가 SSOT보다 새 behavior를 먼저 선언하면 drift로 본다.
 - Public npm invocation은 `package.json`의 `bin.ai-bricklaying`이 가리키는 `bin/ai-bricklaying.js`를 기준으로 판단한다. CLI behavior 구현 정본은 bundled Go binary이며 JS file은 launcher 역할만 한다.
 - Legacy Python package surface는 Go contract equivalent 통과 후 제거되었으며 npm 배포 계약을 대표하지 않는다.
-- External delivery는 opt-in이다. `file` save는 항상 수행한다.
+- External delivery는 opt-in이다. Legacy summary의 `file` save는 항상 수행하고, daily flow는 confirmation 전 private state만 저장하며 confirmed worklog는 explicit finalize 뒤에만 생성한다.
+- Phase 1A confirmed worklog는 local-only다. Gmail MCP/Slack delivery contract는 legacy lightweight summary handoff에만 적용한다.
+- Claude generated skill은 daily interview adapter이고 CLI machine protocol 1.0이 private state와 confirmed worklog의 유일한 writer다.
+- Machine evidence는 explicit consent=true 뒤에만 반환한다. consent=false는 denied를 저장하며 session-derived text는 항상 untrusted data다.
 - Secret은 정본 예시에서도 실제 값처럼 보이게 쓰지 않는다. 예시는 `https://hooks.slack.com/services/...`처럼 축약한다.
-- Compound engineering 품질은 출력 template의 필수 기능이다. 요약은 `lessons`, `evidence`, `better AI usage`, `follow-up prompt`를 포함해야 한다.
+- Compound engineering 품질은 legacy summary template의 필수 기능이다. Legacy summary는 `lessons`, `evidence`, `better AI usage`, `follow-up prompt`를 포함한다. Confirmed worklog는 별도 daily schema와 사용자 확인 계약을 따른다.
 
 ## 3. 문서 구조 규칙
 
@@ -63,7 +66,7 @@ ssot/
 
 ## 4. frontmatter 규칙
 
-모든 SSOT 문서는 frontmatter에 아래 3개 키만 사용한다.
+모든 canonical SSOT Markdown 문서는 frontmatter에 아래 3개 키만 사용한다. Repository instruction file인 `ssot/domains/AGENTS.md`는 SSOT 본문이 아니므로 frontmatter 예외다.
 
 ```yaml
 ---
@@ -84,14 +87,14 @@ ref:
 
 1. Service overview: 제품 목적, 사용자, 포함/비포함 범위
 2. Usecase inventory: 사용자 행동과 CLI trigger
-3. Entity and field dictionary: config, summary, skill, session record 같은 저장/출력 객체
-4. Output contract: Markdown, JSON metadata, Slack payload, skill file contract
-5. State and invariants: wizard/non-interactive flow, always-save, no-send invariant
-6. Permissions and policies: local filesystem write, secret handling, external delivery opt-in
-7. Query and discovery contract: session source discovery, env var override, date boundary
+3. Entity and field dictionary: config, summary, skill, session record, daily flow/work item/consent 같은 저장/출력 객체
+4. Output contract: legacy Markdown/metadata/Slack payload/skill과 private daily state/lock/confirmed worklog contract
+5. State and invariants: wizard/non-interactive flow, daily draft/interviewing/confirmed, revision/idempotency/consent, always-save/no-send invariant
+6. Permissions and policies: local filesystem write, owner-only daily state/worklog/lock, secret handling, external delivery opt-in
+7. Query and discovery contract: legacy summary source와 machine multi-source discovery, env override, timezone/date boundary
 8. External dependencies and async: Slack block conversion, Gmail MCP handoff, no implicit send
-9. Error model: validation, IO, unsupported option, missing secret handling
-10. Test fixtures and acceptance: happy path와 실패 축
+9. Error model: validation, IO, unsupported option, missing secret, revision/lock/artifact conflict handling
+10. Test fixtures and acceptance: legacy generation과 daily lifecycle/consent/resume/finalize happy path 및 실패 축
 
 ## 6. 표현 규칙
 
@@ -116,12 +119,17 @@ ref:
 - `package.json`의 `bin`, `files`, `scripts`와 `dist/` binary 목록이 SSOT의 배포/검증 설명과 맞는가
 - Go contract test와 npm launcher test가 SSOT acceptance matrix의 핵심 behavior를 검증하는가
 - Generated artifact 이름이 README, SSOT, test에서 서로 일치하는가
+- 모든 machine request가 `protocol_version: "1.0"`을 요구하고 command가 `prepare/status/disclose/checkpoint/finalize`로 일치하는가
+- Generated skill이 동의 전 provider/source/status/count만 보여주고 consent=false/no-activity에서 user recall로 안전하게 진행하는가
+- Daily language가 Korean/English로 deterministic하게 normalize되고 unsupported legacy/request 값이 English로 fallback하는가
+- Same-date resume, confirmed read-only, local-only delivery, owner-only state/worklog/lock 계약이 Go/Node acceptance와 일치하는가
 
 ### 7.3 Compound engineering 검증
 
 - Summary template이 단순 작업 목록이 아니라 재사용 가능한 lesson과 better AI usage를 요구하는가
 - Skill output이 다음 session에서 바로 쓸 수 있는 workflow를 제공하는가
-- Missing session path에서도 follow-up prompt와 template이 남는가
+- Legacy summary는 missing session path에서도 follow-up prompt와 template을 남기고, daily flow는 coverage 불확실성과 user recall 경로를 제공하는가
+- Daily worklog는 candidate inference와 user-confirmed fact를 구분하고 reflection/next action을 보존하는가
 
 ## 8. 작성 언어 규칙
 

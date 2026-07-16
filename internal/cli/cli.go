@@ -23,20 +23,23 @@ import (
 	"ai-bricklaying/internal/slack"
 	"ai-bricklaying/internal/sources"
 	"ai-bricklaying/internal/summary"
+	"ai-bricklaying/internal/worklog"
 )
 
 const (
 	defaultLanguage = "English"
 	defaultModel    = "configured model"
-	defaultSkill    = "daily-ai-session-summary"
-	defaultTarget   = "opencode"
+	defaultSkill    = "ai-bricklaying-worklog"
+	defaultTarget   = "claude-code"
 	contractExit    = 2
 )
 
 var (
-	cliVersion      = "0.1.0"
-	outputModeOrder = []string{"file", "gmail-mcp", "slack-webhook"}
-	skillNameRegexp = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	cliVersion              = "0.1.0"
+	outputModeOrder         = []string{"file", "gmail-mcp", "slack-webhook"}
+	skillNameRegexp         = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$`)
+	legacySkillNameRegexp   = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+	errSecretInputCancelled = errors.New("secret input cancelled")
 )
 
 // ParsedArgs contains raw flag values before config defaults are applied.
@@ -115,6 +118,9 @@ func (err cliError) Error() string { return err.message }
 
 // Run is the internal CLI entry point used by cmd/ai-bricklaying.
 func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
+	if len(argv) > 0 && argv[0] == "machine" {
+		return worklog.RunMachine(argv[1:], os.Stdin, stdout, stderr)
+	}
 	args, err := ParseArgs(argv)
 	if err != nil {
 		fmt.Fprintln(stderr, err.Error())
@@ -146,7 +152,7 @@ func Run(argv []string, stdout io.Writer, stderr io.Writer) int {
 	}
 
 	if _, err := Generate(resolved, stdout); err != nil {
-		if errors.Is(err, safeio.ErrSymlinkTarget) {
+		if errors.Is(err, safeio.ErrSymlinkTarget) || errors.Is(err, skill.ErrDestinationCollision) {
 			fmt.Fprintln(stderr, err.Error())
 			return contractExit
 		}
@@ -176,7 +182,7 @@ func ParseArgs(argv []string) (ParsedArgs, error) {
 	}
 	parser, err := kong.New(&grammar,
 		kong.Name("ai-bricklaying"),
-		kong.Description("Summarize today's AI agent sessions and generate a reusable skill."),
+		kong.Description("Turn today's AI agent sessions into an interview-confirmed worklog skill."),
 		kong.NoDefaultHelp(),
 	)
 	if err != nil {
@@ -185,7 +191,7 @@ func ParseArgs(argv []string) (ParsedArgs, error) {
 	if _, err := parser.Parse(argv); err != nil {
 		return ParsedArgs{}, cliError{message: err.Error()}
 	}
-	applyKongDefaults(&grammar)
+	applyKongDefaults(&grammar, args.Provided)
 
 	args.NonInteractive = grammar.NonInteractive
 	args.TargetAgent = grammar.TargetAgent
@@ -204,7 +210,7 @@ func ParseArgs(argv []string) (ParsedArgs, error) {
 	return args, nil
 }
 
-func applyKongDefaults(args *kongArgs) {
+func applyKongDefaults(args *kongArgs, provided map[string]bool) {
 	if args.TargetModel == "" {
 		args.TargetModel = defaultModel
 	}
@@ -214,7 +220,7 @@ func applyKongDefaults(args *kongArgs) {
 	if args.OutputModes == "" {
 		args.OutputModes = "file"
 	}
-	if args.SkillName == "" {
+	if !provided["skillName"] && args.SkillName == "" {
 		args.SkillName = defaultSkill
 	}
 	if args.OutputDir == "" {
@@ -311,12 +317,17 @@ func validateFlagShape(argv []string, args *ParsedArgs) error {
 
 // Resolve applies saved config defaults and validates the executable contract.
 func Resolve(args ParsedArgs) (ResolvedConfig, error) {
+	if err := validateExplicitArgumentCardinality(args); err != nil {
+		return ResolvedConfig{}, err
+	}
 	args.ConfigDir = absolutePath(config.ExpandHome(args.ConfigDir))
 	stored, configPath, err := config.Load(args.ConfigDir)
 	if err != nil {
 		return ResolvedConfig{}, cliError{message: err.Error()}
 	}
 	args = ApplyConfigDefaults(args, stored)
+	args = applySourceOnlyTargetCompatibility(args)
+	args = migrateSavedCopilotSkillDir(args)
 
 	targets, err := targetsFromArgs(args.TargetAgent, args.TargetModel)
 	if err != nil {
@@ -381,7 +392,7 @@ func ApplyConfigDefaults(args ParsedArgs, stored config.StoredConfig) ParsedArgs
 		args.OutputModes = strings.Join(defaults.OutputModes, ",")
 	}
 	if !provided["skillName"] && defaults.SkillName != "" {
-		args.SkillName = defaults.SkillName
+		args.SkillName = migrateStoredSkillName(defaults.SkillName)
 	}
 	if !provided["skillDir"] && defaults.SkillDir != "" {
 		args.SkillDir = defaults.SkillDir
@@ -404,10 +415,11 @@ func ApplyConfigDefaults(args ParsedArgs, stored config.StoredConfig) ParsedArgs
 
 // HelpText returns the documented CLI help text.
 func HelpText() string {
-	return `Summarize today's AI agent sessions and generate a reusable skill.
+	return `Turn today's AI agent sessions into an interview-confirmed worklog skill.
 
 Usage:
   ai-bricklaying [options]
+  ai-bricklaying machine daily <prepare|status|disclose|checkpoint|finalize> < request.json
 
 Options:
   --non-interactive                 Use defaults and flags without prompting
@@ -425,6 +437,10 @@ Options:
   --config-dir <dir>                ai-bricklaying config directory
   -v, --version                     Show CLI version
   -h, --help                        Show this help
+
+Machine protocol:
+  Reads one versioned JSON request from stdin and writes one JSON envelope to stdout.
+  Evidence excerpts are returned only by daily disclose after explicit consent.
 `
 }
 
@@ -434,14 +450,18 @@ func Version() string {
 }
 
 type promptSession struct {
-	stdout   io.Writer
-	scanner  *bufio.Scanner
-	terminal *terminalPrompt
+	stdout       io.Writer
+	scanner      *bufio.Scanner
+	terminal     *terminalPrompt
+	secretReader func() ([]byte, error)
+	cancelled    bool
 }
 
 type terminalPrompt struct {
-	stdin  *os.File
-	stdout io.Writer
+	stdin     *os.File
+	stdout    io.Writer
+	cancelled bool
+	noANSI    bool
 }
 
 func promptInteractive(resolved ResolvedConfig, stdout io.Writer, stdin io.Reader) (ResolvedConfig, error) {
@@ -453,19 +473,32 @@ func promptInteractive(resolved ResolvedConfig, stdout io.Writer, stdin io.Reade
 		}
 	}
 	targets := session.chooseTargets("1. Select target AI agents for skill installation", allTargets, targetKeys(resolved.TargetAgents))
+	if session.wasCancelled() {
+		return ResolvedConfig{}, cliError{message: "Setup cancelled."}
+	}
 	resolved.TargetAgents = targets
 
 	sourceOptions := sourceOptionsForTargets(targets)
 	resolved.Source = session.chooseSource("2. Select one AI agent whose sessions should be summarized", sourceOptions, resolved.Source.Key)
+	if session.wasCancelled() {
+		return ResolvedConfig{}, cliError{message: "Setup cancelled."}
+	}
 	resolved.Language = session.promptLine("3. Result language", resolved.Language)
 	resolved.OutputDir = absolutePath(config.ExpandHome(session.promptLine("4. File save directory", resolved.OutputDir)))
 	resolved.OutputModes = session.chooseOutputModes("5. Select output modes", resolved.OutputModes)
+	if session.wasCancelled() {
+		return ResolvedConfig{}, cliError{message: "Setup cancelled."}
+	}
 	if includesMode(resolved.OutputModes, "gmail-mcp") {
 		resolved.GmailRecipient = session.promptLine("Gmail recipient (optional)", resolved.GmailRecipient)
 		resolved.GmailSubject = session.promptLine("Gmail subject (optional)", resolved.GmailSubject)
 	}
 	if includesMode(resolved.OutputModes, "slack-webhook") {
-		resolved.SlackWebhookURL = session.promptSecret("Slack webhook URL (optional)", resolved.SlackWebhookURL)
+		slackWebhookURL, err := session.promptSecret("Slack webhook URL (optional)", resolved.SlackWebhookURL)
+		if err != nil {
+			return ResolvedConfig{}, err
+		}
+		resolved.SlackWebhookURL = slackWebhookURL
 	}
 	return resolved, nil
 }
@@ -474,10 +507,18 @@ func newPromptSession(stdout io.Writer, stdin io.Reader) promptSession {
 	session := promptSession{stdout: stdout, scanner: bufio.NewScanner(stdin)}
 	stdinFile, stdinOK := stdin.(*os.File)
 	stdoutFile, stdoutOK := stdout.(*os.File)
+	if stdinOK && term.IsTerminal(int(stdinFile.Fd())) {
+		session.secretReader = terminalSecretReader(stdinFile)
+	}
 	if stdinOK && stdoutOK && term.IsTerminal(int(stdinFile.Fd())) && term.IsTerminal(int(stdoutFile.Fd())) {
-		session.terminal = &terminalPrompt{stdin: stdinFile, stdout: stdout}
+		_, noColor := os.LookupEnv("NO_COLOR")
+		session.terminal = &terminalPrompt{stdin: stdinFile, stdout: stdout, noANSI: noColor}
 	}
 	return session
+}
+
+func (session *promptSession) wasCancelled() bool {
+	return session.cancelled || (session.terminal != nil && session.terminal.cancelled)
 }
 
 func resolvedInteractiveSkillDir(resolved ResolvedConfig) string {
@@ -497,7 +538,10 @@ func (session *promptSession) chooseTargets(title string, options []Target, defa
 		for _, option := range options {
 			labels = append(labels, option.Label)
 		}
-		selectedIndexes := session.terminal.selectRows(title, "Use ↑/↓ to move, Space to toggle, Enter to confirm.", labels, defaultIndexes, nil, true)
+		selectedIndexes := session.terminal.selectRows(title, "Use ↑/↓ or j/k to move, Space to toggle, Enter to confirm, q/Esc to cancel.", labels, defaultIndexes, nil, true)
+		if session.terminal.cancelled {
+			return nil
+		}
 		selected := make([]Target, 0, len(selectedIndexes))
 		for _, index := range selectedIndexes {
 			selected = append(selected, options[index])
@@ -546,7 +590,10 @@ func (session *promptSession) chooseSource(title string, options []Source, defau
 		for _, option := range options {
 			labels = append(labels, option.Label)
 		}
-		selected := session.terminal.selectRows(title, "Use ↑/↓ to move, Enter to select.", labels, []int{defaultIndex}, nil, false)
+		selected := session.terminal.selectRows(title, "Use ↑/↓ or j/k to move, Enter to select, q/Esc to cancel.", labels, []int{defaultIndex}, nil, false)
+		if session.terminal.cancelled {
+			return options[defaultIndex]
+		}
 		if len(selected) > 0 {
 			return options[selected[0]]
 		}
@@ -595,7 +642,10 @@ func (session *promptSession) chooseOutputModes(title string, defaultModes []str
 			}
 			rowLabels = append(rowLabels, label)
 		}
-		selectedIndexes := session.terminal.selectRows(title, "Use ↑/↓ to move, Space to toggle optional modes, Enter to confirm.", rowLabels, defaultIndexes, map[int]bool{0: true}, true)
+		selectedIndexes := session.terminal.selectRows(title, "Use ↑/↓ or j/k to move, Space to toggle optional modes, Enter to confirm, q/Esc to cancel.", rowLabels, defaultIndexes, map[int]bool{0: true}, true)
+		if session.terminal.cancelled {
+			return nil
+		}
 		selected := map[string]bool{"file": true}
 		for _, index := range selectedIndexes {
 			selected[outputModeOrder[index]] = true
@@ -692,16 +742,19 @@ func (prompt *terminalPrompt) selectRows(title string, hint string, labels []str
 			}
 			fmt.Fprint(prompt.stdout, "\r\n")
 			return selectedIndexes(selected, labels)
-		case "ctrl-c":
+		case "cancel", "ctrl-c":
+			prompt.cancelled = true
 			fmt.Fprint(prompt.stdout, "\r\n")
-			return defaultIndexes
+			return nil
 		}
 	}
 }
 
 func (prompt *terminalPrompt) renderRows(lastLines int, title string, hint string, labels []string, selected map[int]bool, fixed map[int]bool, cursor int) int {
-	for line := 0; line < lastLines; line++ {
-		fmt.Fprint(prompt.stdout, "\x1b[1A\x1b[2K\r")
+	if !prompt.noANSI {
+		for line := 0; line < lastLines; line++ {
+			fmt.Fprint(prompt.stdout, "\x1b[1A\x1b[2K\r")
+		}
 	}
 	var builder strings.Builder
 	builder.WriteString("\r\n")
@@ -734,19 +787,27 @@ func (prompt *terminalPrompt) readKey() string {
 	switch buffer[0] {
 	case 3:
 		return "ctrl-c"
+	case 'q', 'Q':
+		return "cancel"
+	case 'k', 'K':
+		return "up"
+	case 'j', 'J':
+		return "down"
 	case ' ':
 		return "space"
 	case '\r', '\n':
 		return "enter"
 	case 0x1b:
-		if count, err := prompt.stdin.Read(buffer[1:3]); err == nil && count == 2 {
-			switch string(buffer[:3]) {
+		tail := readEscapeTail(prompt.stdin)
+		if len(tail) == 2 {
+			switch string(append([]byte{0x1b}, tail...)) {
 			case "\x1b[A":
 				return "up"
 			case "\x1b[B":
 				return "down"
 			}
 		}
+		return "cancel"
 	}
 	return ""
 }
@@ -778,16 +839,41 @@ func (session *promptSession) promptLine(question string, defaultValue string) s
 	return answer
 }
 
-func (session *promptSession) promptSecret(question string, currentValue string) string {
+func (session *promptSession) promptSecret(question string, currentValue string) (string, error) {
 	defaultValue := ""
 	if currentValue != "" {
 		defaultValue = "configured"
 	}
-	answer := session.promptLine(question, defaultValue)
-	if answer == "configured" {
-		return currentValue
+	suffix := ""
+	if defaultValue != "" {
+		suffix = fmt.Sprintf(" [%s]", defaultValue)
 	}
-	return answer
+	fmt.Fprintf(session.stdout, "%s%s: ", question, suffix)
+	answer := ""
+	if session.secretReader != nil {
+		secret, err := session.secretReader()
+		if err != nil {
+			fmt.Fprintln(session.stdout)
+			if errors.Is(err, errSecretInputCancelled) {
+				session.cancelled = true
+				return "", cliError{message: "Setup cancelled."}
+			}
+			return "", cliError{message: "Unable to read hidden terminal input."}
+		}
+		answer = strings.TrimSpace(string(secret))
+	} else if session.scanner.Scan() {
+		answer = strings.TrimSpace(session.scanner.Text())
+	}
+	if answer == "" {
+		fmt.Fprintln(session.stdout)
+		answer = defaultValue
+	} else {
+		fmt.Fprintln(session.stdout, "[hidden]")
+	}
+	if answer == "configured" {
+		return currentValue, nil
+	}
+	return answer, nil
 }
 
 func targetOptions() []Target {
@@ -868,18 +954,37 @@ type GeneratedPaths struct {
 
 func Generate(resolved ResolvedConfig, stdout io.Writer) (GeneratedPaths, error) {
 	day := time.Now()
-	discoverySource, ok := sources.Find(resolved.Source.Key)
-	if !ok {
-		discoverySource = sources.Source{Key: resolved.Source.Key, Label: resolved.Source.Label}
-	}
-	records := sources.Discover(discoverySource, sources.DiscoverOptions{Today: day})
-
 	summaryPath := filepath.Join(resolved.OutputDir, summary.FileName(day))
 	metadataPath := filepath.Join(resolved.OutputDir, summary.MetadataFileName)
 	slackPayloadPath := ""
 	if includesMode(resolved.OutputModes, "slack-webhook") {
 		slackPayloadPath = filepath.Join(resolved.OutputDir, "ai-bricklaying-slack-payload.json")
 	}
+	worklogSources := make([]skill.Source, 0, len(sources.Catalog()))
+	for _, source := range sources.Catalog() {
+		worklogSources = append(worklogSources, skill.Source{Key: source.Key, Label: source.Label})
+	}
+	skillConfig := skill.Config{
+		ConfigPath:       resolved.ConfigPath,
+		Language:         resolved.Language,
+		OutputDir:        resolved.OutputDir,
+		OutputModes:      resolved.OutputModes,
+		SkillName:        resolved.SkillName,
+		MetadataPath:     metadataPath,
+		SlackPayloadPath: slackPayloadPath,
+		Sources:          worklogSources,
+	}
+	skillPlan, err := skill.PlanInstall(skillConfig, skillTargets(resolved))
+	if err != nil {
+		return GeneratedPaths{}, err
+	}
+
+	discoverySource, ok := sources.Find(resolved.Source.Key)
+	if !ok {
+		discoverySource = sources.Source{Key: resolved.Source.Key, Label: resolved.Source.Label}
+	}
+	records := sources.Discover(discoverySource, sources.DiscoverOptions{Today: day})
+
 	summaryConfig := summary.Config{
 		ConfigPath:             resolved.ConfigPath,
 		GmailRecipient:         resolved.GmailRecipient,
@@ -905,7 +1010,10 @@ func Generate(resolved ResolvedConfig, stdout io.Writer) (GeneratedPaths, error)
 		if err != nil {
 			return GeneratedPaths{}, err
 		}
-		payloadJSON = []byte(safeio.RedactString(string(payloadJSON)))
+		payloadJSON, err = safeio.RedactJSON(payloadJSON)
+		if err != nil {
+			return GeneratedPaths{}, err
+		}
 		if err := safeio.WriteFile(slackPayloadPath, append(payloadJSON, '\n'), safeio.WriteOptions{}); err != nil {
 			return GeneratedPaths{}, err
 		}
@@ -916,27 +1024,19 @@ func Generate(resolved ResolvedConfig, stdout io.Writer) (GeneratedPaths, error)
 	if err != nil {
 		return GeneratedPaths{}, err
 	}
-	metadataJSON = []byte(safeio.RedactString(string(metadataJSON)))
+	metadataJSON, err = safeio.RedactJSON(metadataJSON)
+	if err != nil {
+		return GeneratedPaths{}, err
+	}
 	if err := safeio.WriteFile(metadataPath, append(metadataJSON, '\n'), safeio.WriteOptions{}); err != nil {
 		return GeneratedPaths{}, err
 	}
 
-	if err := writeResolvedConfig(resolved); err != nil {
+	skillPaths, err := skillPlan.Apply()
+	if err != nil {
 		return GeneratedPaths{}, err
 	}
-
-	skillConfig := skill.Config{
-		ConfigPath:       resolved.ConfigPath,
-		Language:         resolved.Language,
-		OutputDir:        resolved.OutputDir,
-		OutputModes:      resolved.OutputModes,
-		SkillName:        resolved.SkillName,
-		MetadataPath:     metadataPath,
-		SlackPayloadPath: slackPayloadPath,
-		Sources:          []skill.Source{{Key: resolved.Source.Key, Label: resolved.Source.Label}},
-	}
-	skillPaths, err := skill.Install(skillConfig, skillTargets(resolved))
-	if err != nil {
+	if err := writeResolvedConfig(resolved); err != nil {
 		return GeneratedPaths{}, err
 	}
 
@@ -979,14 +1079,14 @@ func writeResolvedConfig(resolved ResolvedConfig) error {
 
 func printCompletion(stdout io.Writer, resolved ResolvedConfig, paths GeneratedPaths) {
 	fmt.Fprintln(stdout, "AI Bricklaying files generated")
-	fmt.Fprintf(stdout, "  Summary:  %s\n", safeio.SanitizeControl(paths.SummaryPath))
-	fmt.Fprintf(stdout, "  Metadata: %s\n", safeio.SanitizeControl(paths.MetadataPath))
-	fmt.Fprintf(stdout, "  Config:   %s\n", safeio.SanitizeControl(paths.ConfigPath))
+	fmt.Fprintf(stdout, "  Summary:  %s\n", completionPath(paths.SummaryPath))
+	fmt.Fprintf(stdout, "  Metadata: %s\n", completionPath(paths.MetadataPath))
+	fmt.Fprintf(stdout, "  Config:   %s\n", completionPath(paths.ConfigPath))
 	if paths.SlackPayloadPath != "" {
-		fmt.Fprintf(stdout, "  Slack:    %s\n", safeio.SanitizeControl(paths.SlackPayloadPath))
+		fmt.Fprintf(stdout, "  Slack:    %s\n", completionPath(paths.SlackPayloadPath))
 	}
 	for _, skillPath := range paths.SkillPaths {
-		fmt.Fprintf(stdout, "  Skill:    %s\n", safeio.SanitizeControl(skillPath))
+		fmt.Fprintf(stdout, "  Skill:    %s\n", completionPath(skillPath))
 	}
 	if hasTarget(resolved.TargetAgents, "opencode") {
 		fmt.Fprintln(stdout, "Hint: OpenCode loads skills when a session starts. Restart OpenCode or open a new session if the skill is not visible yet.")
@@ -999,6 +1099,13 @@ func printCompletion(stdout io.Writer, resolved ResolvedConfig, paths GeneratedP
 	}
 	fmt.Fprintf(stdout, "Use the generated skill: /%s\n", resolved.SkillName)
 	fmt.Fprintln(stdout, "To refresh later: npm install -g ai-bricklaying@latest && ai-bricklaying")
+}
+
+func completionPath(value string) string {
+	value = safeio.RedactString(value)
+	value = safeio.SanitizeControl(value)
+	value = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ").Replace(value)
+	return strings.TrimSpace(value)
 }
 
 func summaryTargets(resolved ResolvedConfig) []summary.Target {
@@ -1167,10 +1274,93 @@ func outputModeKey(value string) string {
 }
 
 func validateSkillName(value string) error {
-	if !skillNameRegexp.MatchString(value) || strings.Contains(value, "..") {
-		return cliError{message: "--skill-name must be a path-safe slug using lowercase letters, numbers, dots, underscores, or hyphens"}
+	if len(value) > 64 || strings.Contains(value, "--") || !skillNameRegexp.MatchString(value) {
+		return cliError{message: "--skill-name must be 1-64 lowercase letters, numbers, or single hyphens, with no leading or trailing hyphen"}
 	}
 	return nil
+}
+
+// migrateStoredSkillName preserves names accepted by the legacy CLI while
+// keeping new command-line values subject to the portable Agent Skills slug
+// contract. Unsafe values are returned unchanged so normal validation rejects
+// them instead of silently creating a different path.
+func migrateStoredSkillName(value string) string {
+	if validateSkillName(value) == nil {
+		return value
+	}
+	if strings.Contains(value, "..") || !legacySkillNameRegexp.MatchString(value) {
+		return value
+	}
+
+	var migrated strings.Builder
+	previousHyphen := false
+	for _, char := range value {
+		isSeparator := char == '.' || char == '_' || char == '-'
+		if isSeparator {
+			if !previousHyphen {
+				migrated.WriteByte('-')
+				previousHyphen = true
+			}
+			continue
+		}
+		migrated.WriteRune(char)
+		previousHyphen = false
+	}
+	candidate := strings.TrimRight(migrated.String(), "-")
+	if validateSkillName(candidate) == nil {
+		return candidate
+	}
+	return value
+}
+
+// applySourceOnlyTargetCompatibility preserves the legacy invocation where a
+// caller selected just --sources. Explicit target/source pairs still use the
+// strict mismatch validation below.
+func applySourceOnlyTargetCompatibility(args ParsedArgs) ParsedArgs {
+	if args.Provided["targetAgent"] || !args.Provided["sources"] {
+		return args
+	}
+	keys := csv(args.Sources)
+	if len(keys) != 1 {
+		return args
+	}
+	if _, known := sourceCatalog()[keys[0]]; known {
+		previousTargets := csv(args.TargetAgent)
+		targetChanged := len(previousTargets) != 1 || previousTargets[0] != keys[0]
+		args.TargetAgent = keys[0]
+		if targetChanged && !args.Provided["skillDir"] {
+			args.SkillDir = ""
+		}
+	}
+	return args
+}
+
+func validateExplicitArgumentCardinality(args ParsedArgs) error {
+	if !args.Provided["sources"] {
+		return nil
+	}
+	parts := strings.Split(args.Sources, ",")
+	if len(parts) != 1 || strings.TrimSpace(parts[0]) == "" {
+		return cliError{message: "--sources accepts exactly one summary source"}
+	}
+	return nil
+}
+
+func migrateSavedCopilotSkillDir(args ParsedArgs) ParsedArgs {
+	targets := csv(args.TargetAgent)
+	if args.Provided["skillDir"] || args.SkillDir == "" || len(targets) != 1 || targets[0] != "github-copilot" {
+		return args
+	}
+
+	saved := absolutePath(config.ExpandHome(args.SkillDir))
+	home := homeDir()
+	oldDefault := filepath.Join(home, ".github-copilot", "skills")
+	currentHomeDefault := filepath.Join(home, ".copilot", "skills")
+	customHome := strings.TrimSpace(os.Getenv("COPILOT_HOME")) != ""
+	if saved == oldDefault || (customHome && saved == currentHomeDefault) {
+		args.SkillDir = copilotSkillDir()
+	}
+	return args
 }
 
 func isKnownOutputMode(value string) bool {
@@ -1212,8 +1402,15 @@ func targetCatalog() map[string]Target {
 		"claude-code":    {Key: "claude-code", Label: "Claude Code", DefaultSkillDir: filepath.Join(home, ".claude/skills"), ModelHint: "configured Claude model"},
 		"codex":          {Key: "codex", Label: "Codex", DefaultSkillDir: filepath.Join(home, ".codex/skills"), ModelHint: "configured Codex model"},
 		"cursor":         {Key: "cursor", Label: "Cursor", DefaultSkillDir: filepath.Join(home, ".cursor/skills"), ModelHint: "configured Cursor model"},
-		"github-copilot": {Key: "github-copilot", Label: "GitHub Copilot", DefaultSkillDir: filepath.Join(home, ".github-copilot/skills"), ModelHint: "configured Copilot model"},
+		"github-copilot": {Key: "github-copilot", Label: "GitHub Copilot", DefaultSkillDir: copilotSkillDir(), ModelHint: "configured Copilot model"},
 	}
+}
+
+func copilotSkillDir() string {
+	if value := strings.TrimSpace(os.Getenv("COPILOT_HOME")); value != "" {
+		return filepath.Join(absolutePath(config.ExpandHome(value)), "skills")
+	}
+	return filepath.Join(homeDir(), ".copilot", "skills")
 }
 
 func sourceCatalog() map[string]Source {

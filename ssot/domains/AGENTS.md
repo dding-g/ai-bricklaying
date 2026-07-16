@@ -12,6 +12,7 @@
 - `cli/index.md`가 너무 커지거나 CLI 외 domain이 생기면 `ssot/rules.md`의 번호 문서 세트로 분리한다.
 - README나 test에서 발견한 behavior를 SSOT에 반영할 때는 user-facing 계약인지, implementation detail인지 먼저 구분한다.
 - 구현 회고, 임시 우회, session transcript 원문은 domain SSOT에 넣지 않는다.
+- `ssot/domains/AGENTS.md` 자체는 repository instruction file이며 canonical SSOT frontmatter 규칙의 예외다.
 
 ## 참조 규칙
 
@@ -21,4 +22,4 @@
 ## 금지 사항
 
 - 같은 CLI option이나 output contract를 여러 domain 문서에 반복 정의하지 않는다.
-- Generated summary, generated skill, local config file을 정본 문서처럼 수동 수정하지 않는다.
+- Generated summary, generated skill, local config, private daily state/lock, confirmed worklog를 정본 문서처럼 수동 수정하지 않는다.
