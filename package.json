@@ -1,7 +1,7 @@
 {
   "name": "ai-bricklaying",
   "version": "0.1.0",
-  "description": "CLI for turning AI coding session history into compound-engineering summaries and reusable skills",
+  "description": "CLI and agent skill for turning AI coding history into interview-confirmed daily worklogs",
   "keywords": [
     "ai",
     "cli",
@@ -12,7 +12,9 @@
     "cursor",
     "github-copilot",
     "compound-engineering",
-    "developer-tools"
+    "developer-tools",
+    "worklog",
+    "claude"
   ],
   "author": "ai-bricklaying contributors",
   "license": "MIT",
@@ -34,7 +36,7 @@
   ],
   "scripts": {
     "build:go": "node scripts/build-go.mjs",
-    "test": "go test ./... && node tests/cli-node.test.js",
+    "test": "node scripts/build-go.mjs && go test ./... && node tests/cli-node.test.js",
     "test:go": "go test ./...",
     "test:node": "node tests/cli-node.test.js",
     "pack:dry-run": "node scripts/pack-dry-run.mjs",
@@ -49,8 +51,7 @@
   },
   "os": [
     "darwin",
-    "linux",
-    "win32"
+    "linux"
   ],
   "packageManager": "bun@1.3.5",
   "devDependencies": {

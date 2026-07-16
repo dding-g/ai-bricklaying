@@ -1,8 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -133,7 +135,7 @@ func TestValidationErrorsExitTwoWithContractMessages(t *testing.T) {
 		{
 			name:    "unsafe skill name",
 			args:    []string{"--non-interactive", "--skill-name", "../escape", "--config-dir", filepath.Join(t.TempDir(), "config")},
-			message: "--skill-name must be a path-safe slug",
+			message: "--skill-name must be 1-64 lowercase letters",
 		},
 	}
 
@@ -146,6 +148,267 @@ func TestValidationErrorsExitTwoWithContractMessages(t *testing.T) {
 
 			if exitCode != 2 {
 				t.Fatalf("exit code = %d, want 2; stdout=%q stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stderr.String(), test.message) {
+				t.Fatalf("stderr = %q, want %q", stderr.String(), test.message)
+			}
+		})
+	}
+}
+
+func TestSkillNameFollowsAgentSkillsPortableSlugContract(t *testing.T) {
+	for _, value := range []string{"a", "ai-bricklaying-worklog", "skill2"} {
+		if err := validateSkillName(value); err != nil {
+			t.Fatalf("valid skill name %q rejected: %v", value, err)
+		}
+	}
+	for _, value := range []string{"", "team_log", "team.log", "-team", "team-", "team--log", strings.Repeat("a", 65)} {
+		if err := validateSkillName(value); err == nil {
+			t.Fatalf("non-portable skill name %q accepted", value)
+		}
+	}
+}
+
+func TestStoredSkillNameMigrationOnlyNormalizesLegacySafeNames(t *testing.T) {
+	tests := map[string]string{
+		"already-portable":      "already-portable",
+		"legacy_summary":        "legacy-summary",
+		"legacy.summary_name-":  "legacy-summary-name",
+		"legacy..summary":       "legacy..summary",
+		"../escape":             "../escape",
+		"UPPER_CASE":            "UPPER_CASE",
+		strings.Repeat("a", 65): strings.Repeat("a", 65),
+	}
+	for input, want := range tests {
+		if got := migrateStoredSkillName(input); got != want {
+			t.Errorf("migrateStoredSkillName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestTargetCatalogUsesGitHubCopilotPersonalSkillDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("COPILOT_HOME", "")
+
+	got := targetCatalog()["github-copilot"].DefaultSkillDir
+	want := filepath.Join(home, ".copilot", "skills")
+	if got != want {
+		t.Fatalf("GitHub Copilot skill directory = %q, want %q", got, want)
+	}
+}
+
+func TestSavedCopilotDefaultSkillDirectoryMigrationRespectsCopilotHomeAndCustomPaths(t *testing.T) {
+	tests := []struct {
+		name         string
+		copilotHome  string
+		savedPath    func(string) string
+		expectedPath func(string, string) string
+	}{
+		{
+			name:         "old product path moves to current home default",
+			savedPath:    func(home string) string { return filepath.Join(home, ".github-copilot", "skills") },
+			expectedPath: func(home string, _ string) string { return filepath.Join(home, ".copilot", "skills") },
+		},
+		{
+			name:         "old product path moves to COPILOT_HOME",
+			copilotHome:  "custom-copilot-home",
+			savedPath:    func(home string) string { return filepath.Join(home, ".github-copilot", "skills") },
+			expectedPath: func(_ string, copilotHome string) string { return filepath.Join(copilotHome, "skills") },
+		},
+		{
+			name:         "home default moves to COPILOT_HOME",
+			copilotHome:  "custom-copilot-home",
+			savedPath:    func(home string) string { return filepath.Join(home, ".copilot", "skills") },
+			expectedPath: func(_ string, copilotHome string) string { return filepath.Join(copilotHome, "skills") },
+		},
+		{
+			name:         "custom saved path remains custom",
+			copilotHome:  "custom-copilot-home",
+			savedPath:    func(home string) string { return filepath.Join(home, "my-shared-skills") },
+			expectedPath: func(home string, _ string) string { return filepath.Join(home, "my-shared-skills") },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			copilotHome := ""
+			if test.copilotHome != "" {
+				copilotHome = filepath.Join(home, test.copilotHome)
+			}
+			t.Setenv("COPILOT_HOME", copilotHome)
+			configDir := filepath.Join(t.TempDir(), "config")
+			if err := os.Mkdir(configDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			writeConfig(t, configDir, map[string]any{
+				"defaults": map[string]any{
+					"target_agents": []string{"github-copilot"},
+					"source":        "github-copilot",
+					"skill_dir":     test.savedPath(home),
+				},
+			})
+
+			resolved, err := resolveFromArgs(t, "--non-interactive", "--config-dir", configDir)
+			if err != nil {
+				t.Fatalf("Resolve returned error: %v", err)
+			}
+			want := test.expectedPath(home, copilotHome)
+			if resolved.SkillDir != want || resolved.TargetAgents[0].DefaultSkillDir != want {
+				t.Fatalf("resolved Copilot skill dir = %q / %q, want %q", resolved.SkillDir, resolved.TargetAgents[0].DefaultSkillDir, want)
+			}
+		})
+	}
+}
+
+func TestRunPersistsSavedCopilotDefaultSkillDirectoryMigration(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	copilotHome := filepath.Join(home, "copilot-profile")
+	t.Setenv("COPILOT_HOME", copilotHome)
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, configDir, map[string]any{
+		"defaults": map[string]any{
+			"target_agents": []string{"github-copilot"},
+			"source":        "github-copilot",
+			"output_modes":  []string{"file"},
+			"skill_name":    "copilot-path-migration",
+			"skill_dir":     filepath.Join(home, ".github-copilot", "skills"),
+			"output_dir":    filepath.Join(root, "out"),
+		},
+	})
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := Run([]string{"--non-interactive", "--config-dir", configDir}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("Run exit = %d, want 0; stderr=%q", exitCode, stderr.String())
+	}
+	want := filepath.Join(copilotHome, "skills")
+	var saved config.StoredConfig
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(configDir, "config.json"))), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Defaults.SkillDir != want {
+		t.Fatalf("persisted Copilot skill dir = %q, want %q", saved.Defaults.SkillDir, want)
+	}
+	if _, err := os.Stat(filepath.Join(want, "copilot-path-migration", "SKILL.md")); err != nil {
+		t.Fatalf("migrated Copilot skill was not installed: %v", err)
+	}
+}
+
+func TestExplicitSourceWithoutTargetPreservesLegacyTargetSelection(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, configDir, map[string]any{
+		"defaults": map[string]any{
+			"target_agents": []string{"claude-code"},
+			"skill_dir":     filepath.Join(home, ".claude", "skills"),
+		},
+	})
+
+	resolved, err := resolveFromArgs(t,
+		"--non-interactive",
+		"--sources", "opencode",
+		"--config-dir", configDir,
+	)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if got := strings.Join(targetKeys(resolved.TargetAgents), ","); got != "opencode" {
+		t.Fatalf("targets = %q, want source-compatible opencode", got)
+	}
+	if resolved.Source.Key != "opencode" {
+		t.Fatalf("source = %q, want opencode", resolved.Source.Key)
+	}
+	if resolved.SkillDir != "" {
+		t.Fatalf("promoted source retained saved skill dir %q", resolved.SkillDir)
+	}
+	if got, want := resolved.TargetAgents[0].DefaultSkillDir, filepath.Join(home, ".config", "opencode", "skills"); got != want {
+		t.Fatalf("promoted target skill dir = %q, want %q", got, want)
+	}
+}
+
+func TestExplicitSourcePromotionPreservesExplicitSkillDir(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, configDir, map[string]any{
+		"defaults": map[string]any{
+			"target_agents": []string{"claude-code"},
+			"skill_dir":     filepath.Join(root, "saved-claude-skills"),
+		},
+	})
+	explicitDir := filepath.Join(root, "explicit-shared-skills")
+	resolved, err := resolveFromArgs(t,
+		"--non-interactive",
+		"--sources", "opencode",
+		"--skill-dir", explicitDir,
+		"--config-dir", configDir,
+	)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolved.SkillDir != explicitDir || resolved.TargetAgents[0].DefaultSkillDir != explicitDir {
+		t.Fatalf("explicit skill dir was not preserved: %#v", resolved)
+	}
+}
+
+func TestExplicitTargetSourceMismatchRemainsStrict(t *testing.T) {
+	_, err := resolveFromArgs(t,
+		"--non-interactive",
+		"--target-agent", "claude-code",
+		"--sources", "opencode",
+		"--config-dir", filepath.Join(t.TempDir(), "config"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "--sources must be one of the selected target agents: claude-code") {
+		t.Fatalf("Resolve mismatch error = %v", err)
+	}
+}
+
+func TestSourceOnlyCompatibilityKeepsUnknownSourceError(t *testing.T) {
+	_, err := resolveFromArgs(t,
+		"--non-interactive",
+		"--sources", "unknown-agent",
+		"--config-dir", filepath.Join(t.TempDir(), "config"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "Unknown source(s): unknown-agent") {
+		t.Fatalf("Resolve unknown source error = %v", err)
+	}
+}
+
+func TestExplicitEmptySkillNameAndSourceShapesFailStrictValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		args    []string
+		message string
+	}{
+		{name: "inline empty skill name", args: []string{"--skill-name="}, message: "--skill-name must be 1-64"},
+		{name: "separate empty skill name", args: []string{"--skill-name", ""}, message: "--skill-name must be 1-64"},
+		{name: "inline empty source", args: []string{"--sources="}, message: "--sources accepts exactly one"},
+		{name: "whitespace source", args: []string{"--sources=   "}, message: "--sources accepts exactly one"},
+		{name: "commas only source", args: []string{"--sources=,,,"}, message: "--sources accepts exactly one"},
+		{name: "trailing empty source", args: []string{"--sources=opencode,"}, message: "--sources accepts exactly one"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := append([]string{"--non-interactive", "--config-dir", filepath.Join(t.TempDir(), "config")}, test.args...)
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			if exitCode := Run(args, &stdout, &stderr); exitCode != contractExit {
+				t.Fatalf("exit code = %d, want %d; stdout=%q stderr=%q", exitCode, contractExit, stdout.String(), stderr.String())
 			}
 			if !strings.Contains(stderr.String(), test.message) {
 				t.Fatalf("stderr = %q, want %q", stderr.String(), test.message)
@@ -238,6 +501,110 @@ func TestConfigDefaultsApplyOnlyWhenFlagsMissing(t *testing.T) {
 	}
 	if resolved.SlackWebhookURL != "https://hooks.slack.com/services/T000/B000/saved-secret" {
 		t.Fatalf("saved webhook default missing")
+	}
+}
+
+func TestLegacySavedSkillNameMigratesWithoutWeakeningExplicitFlag(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	skillDir := filepath.Join(root, "skills")
+	outputDir := filepath.Join(root, "out")
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, configDir, map[string]any{
+		"defaults": map[string]any{
+			"target_agents": []string{"opencode"},
+			"source":        "opencode",
+			"output_modes":  []string{"file"},
+			"skill_name":    "legacy_summary",
+			"skill_dir":     skillDir,
+			"output_dir":    outputDir,
+		},
+	})
+
+	resolved, err := resolveFromArgs(t, "--non-interactive", "--config-dir", configDir)
+	if err != nil {
+		t.Fatalf("Resolve returned error for legacy saved name: %v", err)
+	}
+	if resolved.SkillName != "legacy-summary" {
+		t.Fatalf("migrated skill name = %q, want legacy-summary", resolved.SkillName)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := Run([]string{"--non-interactive", "--config-dir", configDir}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("Run exit code = %d, want 0; stderr=%q", exitCode, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(skillDir, "legacy-summary", "SKILL.md")); err != nil {
+		t.Fatalf("migrated skill was not installed: %v", err)
+	}
+	var saved config.StoredConfig
+	if err := json.Unmarshal([]byte(readFile(t, filepath.Join(configDir, "config.json"))), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Defaults.SkillName != "legacy-summary" {
+		t.Fatalf("persisted skill name = %q, want legacy-summary", saved.Defaults.SkillName)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := Run([]string{"--non-interactive", "--config-dir", configDir}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("managed skill rerun exit code = %d, want 0; stderr=%q", exitCode, stderr.String())
+	}
+
+	_, err = resolveFromArgs(t,
+		"--non-interactive",
+		"--skill-name", "explicit_name",
+		"--config-dir", configDir,
+	)
+	if err == nil || !strings.Contains(err.Error(), "--skill-name must be 1-64 lowercase letters") {
+		t.Fatalf("explicit legacy-shaped skill name should remain invalid, got %v", err)
+	}
+}
+
+func TestLegacySavedSkillNameMigrationRefusesUnownedNormalizedDestination(t *testing.T) {
+	root := t.TempDir()
+	configDir := filepath.Join(root, "config")
+	skillDir := filepath.Join(root, "skills")
+	destination := filepath.Join(skillDir, "legacy-summary", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := []byte("---\nname: legacy-summary\ndescription: user-owned skill\n---\n\n# Keep me\n")
+	if err := os.WriteFile(destination, original, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeConfig(t, configDir, map[string]any{
+		"defaults": map[string]any{
+			"target_agents": []string{"opencode"},
+			"source":        "opencode",
+			"output_modes":  []string{"file"},
+			"skill_name":    "legacy_summary",
+			"skill_dir":     skillDir,
+			"output_dir":    filepath.Join(root, "out"),
+		},
+	})
+	configBefore := readFile(t, filepath.Join(configDir, "config.json"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if exitCode := Run([]string{"--non-interactive", "--config-dir", configDir}, &stdout, &stderr); exitCode != contractExit {
+		t.Fatalf("Run exit code = %d, want %d; stderr=%q", exitCode, contractExit, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "skill destination collision") {
+		t.Fatalf("stderr missing collision guidance: %q", stderr.String())
+	}
+	if got, err := os.ReadFile(destination); err != nil || !bytes.Equal(got, original) {
+		t.Fatalf("unowned skill changed: err=%v contents=%q", err, got)
+	}
+	if got := readFile(t, filepath.Join(configDir, "config.json")); got != configBefore {
+		t.Fatalf("config changed despite migration collision:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, "out")); !os.IsNotExist(err) {
+		t.Fatalf("collision should fail in preflight before summary output, stat err=%v", err)
 	}
 }
 
@@ -338,9 +705,14 @@ func TestRunFileOnlyGeneratesSummaryMetadataConfigAndSkill(t *testing.T) {
 	}
 
 	skill := readFile(t, skillPath)
-	for _, expected := range []string{"## Sources", "## Output Locations", "## CLI Result Delivery Modes", "## Workflow", "## Summary Template", "File-only mode: do not attempt Gmail, Slack, or any external delivery", "This skill was generated from the CLI result with delivery modes: file."} {
+	for _, expected := range []string{"## Sources", "## Output Locations", "## CLI Result Delivery Modes", "## Workflow", "File-only mode: do not attempt Gmail, Slack, or any external delivery", "This skill was generated from the CLI result with delivery modes: file."} {
 		if !strings.Contains(skill, expected) {
 			t.Fatalf("skill missing %q:\n%s", expected, skill)
+		}
+	}
+	for _, sourceKey := range []string{"opencode", "claude-code", "codex", "cursor", "github-copilot"} {
+		if !strings.Contains(skill, `"`+sourceKey+`"`) {
+			t.Fatalf("worklog skill missing explicit source %q", sourceKey)
 		}
 	}
 	for _, forbidden := range []string{"`gmail-mcp`: when", "`slack-webhook`: when", "Slack payload content must mirror"} {
@@ -505,7 +877,7 @@ func TestRunInteractiveLineModeDefaultsGenerateArtifacts(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("exit code = %d, want 0; stderr=%q", exitCode, stderr)
 	}
-	for _, expected := range []string{"[x] OpenCode", "[ ] Claude Code", "[x] File save (always enabled)", "AI Bricklaying files generated"} {
+	for _, expected := range []string{"[ ] OpenCode", "[x] Claude Code", "[x] File save (always enabled)", "AI Bricklaying files generated"} {
 		if !strings.Contains(stdout, expected) {
 			t.Fatalf("stdout missing %q:\n%s", expected, stdout)
 		}
@@ -577,6 +949,161 @@ func TestRunInteractiveLineModeShowsConfiguredSlackWebhookWithoutLeakingSecret(t
 	}
 	if _, err := os.Stat(filepath.Join(root, "out", "ai-bricklaying-slack-payload.json")); err != nil {
 		t.Fatalf("slack payload should exist: %v", err)
+	}
+}
+
+func TestPromptSecretDoesNotEchoFreshValue(t *testing.T) {
+	secret := "https://hooks.slack.com/services/T000/B000/fresh-interactive-secret"
+	var stdout bytes.Buffer
+	session := newPromptSession(&stdout, strings.NewReader(secret+"\n"))
+
+	got, err := session.promptSecret("Slack webhook URL (optional)", "")
+	if err != nil {
+		t.Fatalf("promptSecret returned error: %v", err)
+	}
+	if got != secret {
+		t.Fatalf("promptSecret returned %q, want supplied secret", got)
+	}
+	if strings.Contains(stdout.String(), secret) {
+		t.Fatalf("fresh secret was echoed to stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "[hidden]") {
+		t.Fatalf("stdout should acknowledge hidden input: %q", stdout.String())
+	}
+}
+
+func TestPromptSecretUsesInjectedHiddenTerminalReader(t *testing.T) {
+	secret := "https://hooks.slack.com/services/T000/B000/terminal-secret"
+	var stdout bytes.Buffer
+	called := false
+	session := promptSession{
+		stdout:  &stdout,
+		scanner: bufio.NewScanner(strings.NewReader("echoed-fallback-secret\n")),
+		secretReader: func() ([]byte, error) {
+			called = true
+			return []byte(secret), nil
+		},
+	}
+
+	got, err := session.promptSecret("Slack webhook URL (optional)", "")
+	if err != nil {
+		t.Fatalf("promptSecret returned error: %v", err)
+	}
+	if !called {
+		t.Fatal("promptSecret did not use the hidden terminal reader")
+	}
+	if got != secret {
+		t.Fatalf("promptSecret returned %q, want supplied secret", got)
+	}
+	if strings.Contains(stdout.String(), secret) || strings.Contains(stdout.String(), "echoed-fallback-secret") {
+		t.Fatalf("hidden terminal input leaked to stdout: %q", stdout.String())
+	}
+}
+
+func TestPromptSecretHiddenReaderFailureDoesNotFallBackToEchoedInput(t *testing.T) {
+	var stdout bytes.Buffer
+	scanner := bufio.NewScanner(strings.NewReader("must-not-be-read\n"))
+	session := promptSession{
+		stdout:       &stdout,
+		scanner:      scanner,
+		secretReader: func() ([]byte, error) { return nil, errors.New("terminal read failed") },
+	}
+
+	if _, err := session.promptSecret("Slack webhook URL (optional)", ""); err == nil {
+		t.Fatal("promptSecret should fail closed when hidden terminal input fails")
+	}
+	if !scanner.Scan() || scanner.Text() != "must-not-be-read" {
+		t.Fatal("promptSecret consumed the echoed fallback after hidden input failed")
+	}
+	if strings.Contains(stdout.String(), "must-not-be-read") {
+		t.Fatalf("fallback secret leaked to stdout: %q", stdout.String())
+	}
+}
+
+func TestPromptSecretTerminalCancelKeys(t *testing.T) {
+	var stdout bytes.Buffer
+	session := promptSession{
+		stdout:       &stdout,
+		scanner:      bufio.NewScanner(strings.NewReader("")),
+		secretReader: func() ([]byte, error) { return nil, errSecretInputCancelled },
+	}
+
+	if _, err := session.promptSecret("Slack webhook URL (optional)", ""); err == nil || err.Error() != "Setup cancelled." {
+		t.Fatalf("promptSecret cancel error = %v", err)
+	}
+	if !session.wasCancelled() {
+		t.Fatal("promptSecret cancel did not mark the session cancelled")
+	}
+}
+
+func TestPromptSecretNonTerminalFallbackKeepsLineInputContract(t *testing.T) {
+	var stdout bytes.Buffer
+	session := newPromptSession(&stdout, strings.NewReader("q\n"))
+
+	got, err := session.promptSecret("Slack webhook URL (optional)", "")
+	if err != nil {
+		t.Fatalf("promptSecret returned error: %v", err)
+	}
+	if got != "q" {
+		t.Fatalf("non-terminal fallback returned %q, want literal q", got)
+	}
+	if session.wasCancelled() {
+		t.Fatal("non-terminal line fallback should not reinterpret q as a cancel key")
+	}
+}
+
+func TestCompletionPathsStayOnOneRedactedLine(t *testing.T) {
+	value := "/tmp/work\nnext\tBearer private-completion-token"
+	output := completionPath(value)
+	if strings.ContainsAny(output, "\r\n\t") {
+		t.Fatalf("completion path contains line-breaking control: %q", output)
+	}
+	if strings.Contains(output, "private-completion-token") {
+		t.Fatalf("completion path leaked credential-like text: %q", output)
+	}
+}
+
+func TestTerminalPromptAccessibleKeysAndStandaloneEscape(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{input: "j", want: "down"},
+		{input: "k", want: "up"},
+		{input: "q", want: "cancel"},
+		{input: "\x03", want: "ctrl-c"},
+		{input: "\x1b", want: "cancel"},
+		{input: "\x1b[A", want: "up"},
+		{input: "\x1b[B", want: "down"},
+	}
+	for _, test := range tests {
+		readPipe, writePipe, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := writePipe.WriteString(test.input); err != nil {
+			t.Fatal(err)
+		}
+		if err := writePipe.Close(); err != nil {
+			t.Fatal(err)
+		}
+		prompt := terminalPrompt{stdin: readPipe}
+		got := prompt.readKey()
+		_ = readPipe.Close()
+		if got != test.want {
+			t.Errorf("readKey(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}
+
+func TestTerminalPromptNoColorRenderingHasNoANSI(t *testing.T) {
+	var stdout bytes.Buffer
+	prompt := terminalPrompt{stdout: &stdout, noANSI: true}
+	selected := map[int]bool{0: true}
+	prompt.renderRows(0, "Choose", "Use j/k", []string{"One", "Two"}, selected, nil, 0)
+	prompt.renderRows(5, "Choose", "Use j/k", []string{"One", "Two"}, selected, nil, 1)
+	if strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatalf("NO_COLOR rendering emitted ANSI: %q", stdout.String())
 	}
 }
 

@@ -39,11 +39,12 @@ current_assessment:
 
 ### 근거
 
-- `README.md`와 `README.ko.md`는 사용자 flow, output modes, config defaults, install path를 잘 설명한다.
-- `tests/cli-node.test.js`는 no-send, Slack payload, config defaults, secret redaction, path safety, source validation을 강하게 검증한다.
+- `README.md`와 `README.ko.md`는 legacy summary와 Claude-first daily interview, consent, same-date resume, local-only confirmed worklog의 경계를 설명한다.
+- Go/Node tests는 legacy no-send/Slack/config/redaction/path/source 계약과 daily protocol 1.0, consent, revision/idempotency, lock/artifact conflict, confirmed lifecycle을 검증한다.
 - `package.json`은 npm public entrypoint를 `bin/ai-bricklaying.js` launcher로 고정하고, CLI behavior는 bundled Go binary가 구현한다.
 - Legacy Python package surface는 Go contract equivalent 통과 후 제거되었으므로, 변경자는 public npm invocation과 Go CLI contract를 기준으로 판단해야 한다.
-- 과거 session 결정에서 확인된 핵심 철학은 `mandatory file save`, `no implicit external send`, `compound engineering summary sections`, `missing session still produces artifact`다.
+- 핵심 철학은 `mandatory file save`, `no implicit external send`, `compound engineering legacy summary`, `explicit daily evidence consent`, `CLI sole writer`, `same-date resume`, `local-only confirmed worklog`다.
+- Phase 1A daily locale은 deterministic Korean/English이며 unsupported legacy/request language는 English로 fallback한다.
 
 ## Drift 위험
 
@@ -58,12 +59,28 @@ drift_risks:
     mitigation: "README 변경 시 ssot/domains/cli/index.md의 usecase/output/acceptance를 함께 갱신한다."
 
   - id: DELIVERY_SIDE_EFFECT_CREEP
-    risk: "CLI의 Slack/Gmail mode가 payload 준비를 넘어 직접 전송으로 바뀌거나, generated skill의 selected-mode delivery instruction과 혼동될 수 있다."
-    mitigation: "NO_IMPLICIT_SEND invariant와 tests를 유지한다."
+    risk: "Legacy summary용 Slack/Gmail mode가 Phase 1A confirmed worklog delivery처럼 보이거나 payload 준비를 넘어 직접 전송으로 바뀔 수 있다."
+    mitigation: "NO_IMPLICIT_SEND와 DAILY_LOCAL_ONLY_DELIVERY invariant를 함께 유지한다."
 
   - id: SECRET_EXPOSURE
     risk: "Session excerpts나 config echo에서 webhook/token이 노출될 수 있다."
-    mitigation: "secret redaction tests와 private config permission checks를 유지한다."
+    mitigation: "common credential best-effort redaction tests, untrusted-data boundary, private config permission checks를 유지하고 완전 redaction을 약속하지 않는다."
+
+  - id: ADAPTER_SCOPE_CONFUSION
+    risk: "Claude generated skill, future ChatGPT MCP, unshipped weekly flow가 모두 현재 기능처럼 문서화될 수 있다."
+    mitigation: "Claude-first shipped adapter와 planned ChatGPT/weekly scope를 README와 SSOT에서 분리한다."
+
+  - id: DAILY_LOCALE_DRIFT
+    risk: "Legacy summary의 자유 형식 language 설정이 daily interview/worklog의 arbitrary-language 지원처럼 해석될 수 있다."
+    mitigation: "Daily protocol과 generated skill은 Korean/English normalization 및 English fallback contract test를 유지한다."
+
+  - id: DAILY_STATE_CONTRACT_DRIFT
+    risk: "Generated skill이 machine command/version, consent false persistence, revision/idempotency, preview/no-work 조건을 빠뜨리거나 state/worklog를 직접 수정할 수 있다."
+    mitigation: "prepare/status/disclose/checkpoint/finalize protocol 1.0 acceptance와 generated skill content test를 유지한다."
+
+  - id: PRIVATE_ARTIFACT_SCOPE_DRIFT
+    risk: "Private daily state, coordination lock, confirmed worklog가 legacy Gmail/Slack artifact 또는 canonical SSOT처럼 취급될 수 있다."
+    mitigation: "owner-only permission, local-only delivery, generated-output noncanonical 규칙과 artifact collision tests를 유지한다."
 ```
 
 ## 개선 Backlog
@@ -121,4 +138,8 @@ review_checklist:
   - "Gmail/Slack no implicit send invariant가 유지되는가"
   - "secret redaction과 private config permission이 약화되지 않았는가"
   - "compound engineering template sections가 유지되는가"
+  - "machine request/envelope의 protocol_version 1.0과 command 이름이 generated skill/README/SSOT에서 일치하는가"
+  - "consent 전 evidence withholding, consent=false denial persistence, untrusted evidence 처리가 유지되는가"
+  - "same-date resume, confirmed read-only, revision/idempotency/lock/artifact conflict 계약이 유지되는가"
+  - "Phase 1A confirmed worklog가 local-only이고 legacy Gmail/Slack delivery와 분리되는가"
 ```
