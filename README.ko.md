@@ -62,10 +62,17 @@ Generated skill의 기본 설치 경로는 target별로 다릅니다. Claude Cod
 
 ## 빠른 시작
 
-Claude Code용 skill을 설치합니다.
+CLI를 설치합니다.
 
 ```bash
 npm install -g ai-bricklaying
+```
+
+### Claude Code
+
+Claude Code용 skill을 설치합니다.
+
+```bash
 ai-bricklaying \
   --non-interactive \
   --target-agent claude-code \
@@ -86,9 +93,37 @@ Claude Code에서 업무일지를 시작합니다.
 /ai-bricklaying-worklog
 ```
 
+### Codex
+
+Codex용 skill을 설치합니다.
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent codex \
+  --sources codex \
+  --language Korean \
+  --output-modes file \
+  --skill-dir ~/.codex/skills
+```
+
+Codex에서 업무일지를 시작합니다.
+
+```text
+오늘 업무일지 작성해줘.
+```
+
+명령으로 직접 시작할 수도 있습니다.
+
+```text
+$ai-bricklaying-worklog
+```
+
 | 목적 | 방법 |
 |---|---|
 | 오늘 업무일지 시작 | `오늘 업무일지 작성해줘` |
+| Claude Code에서 직접 호출 | `/ai-bricklaying-worklog` |
+| Codex에서 직접 호출 | `$ai-bricklaying-worklog` |
 | 중단한 인터뷰 재개 | 같은 local 날짜에 다시 요청 |
 | 설정 변경 또는 skill 갱신 | `ai-bricklaying` |
 | 설치 버전 확인 | `ai-bricklaying --version` |
@@ -116,17 +151,19 @@ Wizard는 다음을 물어봅니다.
 Use the generated skill: /ai-bricklaying-worklog
 ```
 
+위 완료 메시지는 현재 slash form을 표시합니다. Codex에서는 `$ai-bricklaying-worklog`로 직접 호출하세요.
+
 OpenCode에 설치했는데 바로 보이지 않으면 OpenCode를 재시작하거나 새 세션을 여세요. OpenCode는 세션 시작 시점에 skill을 로드합니다.
 
 ## Daily 업무일지 인터뷰
 
-설정 후 Claude에서 자연어로 시작합니다.
+설정 후 Claude Code 또는 Codex에서 자연어로 시작합니다.
 
 ```text
 오늘 업무일지 작성해줘.
 ```
 
-현재 배포된 adapter는 Claude/Claude Code generated skill입니다. 다른 target directory 설치는 호환성을 위해 유지하지만, 이 phase의 end-to-end interview adapter는 Claude/Claude Code를 우선 검증합니다. 다음 순서로 동작합니다.
+Generated daily skill은 Claude Code와 Codex에 설치할 수 있습니다. Claude/Claude Code가 첫 end-to-end validation baseline이며, Codex는 같은 machine protocol skill과 배포된 strict Codex source adapter를 사용합니다. 다른 target directory 설치는 호환성을 위해 유지합니다. 다음 순서로 동작합니다.
 
 1. Local에서 `ai-bricklaying`을 실행할 수 있는지 확인한 뒤 `status`를 호출합니다. 같은 local 날짜의 미완료 flow가 있으면 이어가고, 없으면 catalog source key 5개를 명시한 `prepare`를 호출합니다.
 2. Source, 상태, count만 보여주고 host가 전달된 내용을 원격에서 처리할 수 있음을 설명한 뒤 명시적으로 예/아니오를 묻습니다.
@@ -293,6 +330,41 @@ ai-bricklaying \
 /ai-bricklaying-worklog
 ```
 
+## Codex에 설치
+
+Codex의 기본 skill directory에 명시적으로 설치합니다.
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent codex \
+  --sources codex \
+  --language Korean \
+  --output-modes file \
+  --skill-name ai-bricklaying-worklog \
+  --skill-dir ~/.codex/skills
+```
+
+실행 후 skill은 아래 위치에 생성됩니다.
+
+```text
+~/.codex/skills/ai-bricklaying-worklog/SKILL.md
+```
+
+자연어로 시작합니다.
+
+```text
+오늘 업무일지 작성해줘.
+```
+
+직접 호출하려면 skill 이름 앞에 `$`를 붙입니다.
+
+```text
+$ai-bricklaying-worklog
+```
+
+`CODEX_HOME`은 Codex session source를 찾는 root를 바꿉니다. Skill 설치 경로를 바꾸려면 `--skill-dir`를 명시하세요. Claude/Claude Code가 첫 end-to-end validation baseline이고, Codex setup은 같은 machine protocol skill과 strict Codex source adapter를 사용합니다.
+
 ## CLI 옵션
 
 ```text
@@ -357,7 +429,7 @@ Daily machine request의 `language`는 deterministic 한국어 또는 영어 wor
 
 ### 현재 제공
 
-- [x] Claude/Claude Code daily interview skill
+- [x] Claude Code와 Codex generated skill setup
 - [x] 같은 날짜의 중단 후 재개
 - [x] Evidence 공개 전 명시적 동의
 - [x] Private Markdown과 JSON 확정본
@@ -371,6 +443,7 @@ Daily machine request의 `language`는 deterministic 한국어 또는 영어 wor
 - [ ] OpenCode SQLite strict reader 제공
 - [ ] Cursor와 GitHub Copilot adapter 안정화
 - [ ] Host scheduler 사용 예시와 검증 추가
+- [ ] Target별 post-install 호출 안내 출력
 - [ ] Discovery traversal와 wall-clock 제한 추가
 - [ ] Descriptor-relative path hardening 검토
 

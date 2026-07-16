@@ -62,10 +62,17 @@ If a user-authored skill with the same name already exists at a destination, set
 
 ## Quick Start
 
-Install the Claude Code skill.
+Install the CLI.
 
 ```bash
 npm install -g ai-bricklaying
+```
+
+### Claude Code
+
+Install the Claude Code skill.
+
+```bash
 ai-bricklaying \
   --non-interactive \
   --target-agent claude-code \
@@ -86,9 +93,37 @@ You can also invoke the skill directly.
 /ai-bricklaying-worklog
 ```
 
+### Codex
+
+Install the Codex skill.
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent codex \
+  --sources codex \
+  --language Korean \
+  --output-modes file \
+  --skill-dir ~/.codex/skills
+```
+
+Start the worklog in Codex.
+
+```text
+Write today's worklog.
+```
+
+You can also invoke the skill directly.
+
+```text
+$ai-bricklaying-worklog
+```
+
 | Goal | Action |
 |---|---|
 | Start today's worklog | Say `Write today's worklog` |
+| Invoke directly in Claude Code | `/ai-bricklaying-worklog` |
+| Invoke directly in Codex | `$ai-bricklaying-worklog` |
 | Resume an interview | Ask again on the same local date |
 | Change setup or refresh the skill | Run `ai-bricklaying` |
 | Check the installed version | Run `ai-bricklaying --version` |
@@ -116,17 +151,19 @@ When generation completes, the CLI prints the generated skill command in bold:
 Use the generated skill: /ai-bricklaying-worklog
 ```
 
+The completion message currently uses slash form. In Codex, invoke the skill directly as `$ai-bricklaying-worklog`.
+
 If the target is OpenCode and the skill does not appear immediately, restart OpenCode or open a new session. OpenCode loads skills at session startup.
 
 ## Daily Worklog Interview
 
-After setup, start in Claude with a natural-language request such as:
+After setup, start in Claude Code or Codex with a natural-language request such as:
 
 ```text
 Write today's worklog.
 ```
 
-The current shipped adapter is the Claude/Claude Code generated skill. Other target directories remain available for compatibility, but this phase validates the end-to-end interview adapter on Claude/Claude Code first. It follows this flow:
+You can install the generated daily skill into Claude Code and Codex. Claude/Claude Code is the first end-to-end validation baseline; Codex uses the same machine-protocol skill and the shipped strict Codex source adapter. Other target directories remain available for compatibility. The skill follows this flow:
 
 1. Check that `ai-bricklaying` is available locally, then call `status`. Resume an unfinished flow for the same local date, or call `prepare` with the explicit list of all five catalog source keys when no flow exists.
 2. Show only source, status, and count. Explain that the host may process disclosed data remotely and ask for an explicit yes/no decision.
@@ -293,6 +330,41 @@ Use it as:
 /ai-bricklaying-worklog
 ```
 
+## Install Into Codex
+
+Install explicitly into Codex's default skill directory:
+
+```bash
+ai-bricklaying \
+  --non-interactive \
+  --target-agent codex \
+  --sources codex \
+  --language Korean \
+  --output-modes file \
+  --skill-name ai-bricklaying-worklog \
+  --skill-dir ~/.codex/skills
+```
+
+After this runs, the skill should exist at:
+
+```text
+~/.codex/skills/ai-bricklaying-worklog/SKILL.md
+```
+
+Start with a natural-language request:
+
+```text
+Write today's worklog.
+```
+
+For direct invocation, prefix the skill name with `$`:
+
+```text
+$ai-bricklaying-worklog
+```
+
+`CODEX_HOME` changes the root used to discover Codex session sources. To change the skill installation path, set `--skill-dir` explicitly. Claude/Claude Code is the first end-to-end validation baseline; Codex setup uses the same machine-protocol skill and strict Codex source adapter.
+
 ## CLI Options
 
 ```text
@@ -357,7 +429,7 @@ For daily machine requests, `language` resolves to the deterministic Korean or E
 
 ### Available Now
 
-- [x] Claude and Claude Code daily interview skill
+- [x] Claude Code and Codex generated skill setup
 - [x] Same-date interview resume
 - [x] Explicit consent before evidence disclosure
 - [x] Private Markdown and JSON confirmations
@@ -371,6 +443,7 @@ For daily machine requests, `language` resolves to the deterministic Korean or E
 - [ ] Add a strict OpenCode SQLite reader
 - [ ] Stabilize Cursor and GitHub Copilot adapters
 - [ ] Add and verify host scheduler examples
+- [ ] Print target-specific post-install invocation guidance
 - [ ] Bound discovery traversal and wall-clock time
 - [ ] Evaluate descriptor-relative path hardening
 
