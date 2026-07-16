@@ -4,6 +4,8 @@
   <img src="assets/ai-bricklaying.png" alt="ai-bricklaying logo" style="width:400px;"/>
 </p>
 
+[English](README.md)
+
 `ai-bricklaying`은 오늘 사용한 AI 코딩 기록을 사용자 확인이 끝난 실제 업무일지로 바꾸는 CLI입니다. AI 대화에서 “오늘 업무일지 작성해줘”라고 말하면, 제안된 업무 제목을 확인하고 일하면서 느낀 점을 짧게 답할 수 있는 재사용 skill을 설치합니다. 중간에 멈춰도 같은 local 날짜 안의 다음 대화에서 이어집니다.
 
 ## 하는 일
@@ -57,6 +59,40 @@ Platform이 first release bundled target에 없으면 launcher는 다른 구현�
 Generated skill의 기본 설치 경로는 target별로 다릅니다. Claude Code는 `~/.claude/skills`, Codex는 `~/.codex/skills`, Cursor는 `~/.cursor/skills`, OpenCode는 `~/.config/opencode/skills`를 사용합니다. GitHub Copilot은 `COPILOT_HOME`이 설정되어 있으면 `$COPILOT_HOME/skills`, 아니면 `~/.copilot/skills`를 사용합니다. 이전 버전이 단일 Copilot target에 저장한 기본 경로는 명시적인 `--skill-dir`이 없을 때 현재 기본 경로로 migration하며, 사용자 지정 경로와 multi-target 공유 경로는 변경하지 않습니다.
 
 기존 directory에 같은 이름의 사용자 작성 skill이 있으면 덮어쓰지 않고 종료합니다. `ai-bricklaying`이 같은 config와 이름으로 생성한 skill 또는 정확히 식별되는 이전 버전의 generated skill만 안전하게 갱신합니다.
+
+## 빠른 시작
+
+Claude Code용 skill을 설치합니다.
+
+```bash
+npm install -g ai-bricklaying
+ai-bricklaying \
+  --non-interactive \
+  --target-agent claude-code \
+  --sources claude-code \
+  --language Korean \
+  --output-modes file
+```
+
+Claude Code에서 업무일지를 시작합니다.
+
+```text
+오늘 업무일지 작성해줘.
+```
+
+명령으로 직접 시작할 수도 있습니다.
+
+```text
+/ai-bricklaying-worklog
+```
+
+| 목적 | 방법 |
+|---|---|
+| 오늘 업무일지 시작 | `오늘 업무일지 작성해줘` |
+| 중단한 인터뷰 재개 | 같은 local 날짜에 다시 요청 |
+| 설정 변경 또는 skill 갱신 | `ai-bricklaying` |
+| 설치 버전 확인 | `ai-bricklaying --version` |
+| 전체 옵션 확인 | `ai-bricklaying --help` |
 
 ## 대화형 설정
 
@@ -284,3 +320,89 @@ protocol_version: 1.0 (모든 request에 필수이며 모든 envelope에 반환)
 각 machine command는 stdin JSON object 하나를 받고 stdout JSON envelope 하나를 반환합니다. `prepare`와 `status`는 evidence를 제외한 public flow control metadata와 source coverage를 반환하며, skill은 동의 전에 provider/source/status/count만 보여줍니다. `prepare.sources`를 생략하면 service는 저장된 summary source 또는 `claude-code` 하나를 fallback으로 사용하지만, generated worklog skill은 생략하지 않고 catalog key 5개를 모두 명시합니다. Mutation에는 `flow_id`, `date`, `expected_revision`, `idempotency_key`가 필요합니다. `consent: true`인 `disclose`만 evidence를 반환하고, `consent: false`는 거절을 저장하며 consent 생략은 오류입니다.
 
 Daily machine request의 `language`는 deterministic 한국어 또는 영어 worklog locale로 해석됩니다. 지원하지 않거나 인식할 수 없는 값은 영어로 fallback하며 임의 언어 질문 생성을 요청하지 않습니다.
+
+## 프로젝트 안내
+
+### 동작 구조
+
+1. npm launcher가 현재 platform의 bundled Go binary를 실행합니다.
+2. Setup이 config와 target별 generated skill을 저장합니다.
+3. Generated skill이 daily machine protocol을 호출합니다.
+4. Source adapter가 당일 기록과 coverage 상태를 수집합니다.
+5. 사용자가 확인한 결과만 private worklog로 확정합니다.
+
+### 주요 디렉터리
+
+| 경로 | 역할 |
+|---|---|
+| `bin/ai-bricklaying.js` | npm public CLI launcher |
+| `cmd/ai-bricklaying` | Go CLI entrypoint |
+| `internal/cli` | Setup, legacy summary, CLI contract |
+| `internal/worklog` | Daily protocol, state, confirmed artifact |
+| `internal/sources` | AI history source adapter |
+| `internal/safeio` | Redaction, private write, no-clobber publish |
+| `internal/skill` | Generated `SKILL.md` renderer와 installer |
+| `ssot` | 제품과 외부 interface 계약의 정본 |
+| `tests` | npm launcher와 CLI acceptance test |
+
+### 정본과 실행 결과
+
+- 사용자 동작을 바꾸기 전에 `ssot` 계약을 갱신합니다.
+- `README.md`와 `README.ko.md`를 항상 함께 갱신합니다.
+- Generated summary, state, worklog는 제품 정본이 아닙니다.
+- Confirmed worklog는 현재 local-only입니다.
+- 전체 변경 배경은 [릴리즈 노트](RELEASE-NOTES-ai-bricklaying-worklog.md)를 확인하세요.
+
+## 업데이트 체크리스트
+
+### 현재 제공
+
+- [x] Claude/Claude Code daily interview skill
+- [x] 같은 날짜의 중단 후 재개
+- [x] Evidence 공개 전 명시적 동의
+- [x] Private Markdown과 JSON 확정본
+- [x] 다섯 catalog source의 coverage 상태
+- [x] 기존 single-source summary 호환
+
+### 다음 업데이트
+
+- [ ] ChatGPT용 local MCP adapter 제공
+- [ ] 월요일~일요일 주간 회고 제공
+- [ ] OpenCode SQLite strict reader 제공
+- [ ] Cursor와 GitHub Copilot adapter 안정화
+- [ ] Host scheduler 사용 예시와 검증 추가
+- [ ] Discovery traversal와 wall-clock 제한 추가
+- [ ] Descriptor-relative path hardening 검토
+
+### 매 릴리즈 점검
+
+- [ ] 사용자 동작 변경을 SSOT에 먼저 반영
+- [ ] 영문과 한글 README 동기화
+- [ ] 릴리즈 노트와 알려진 제한사항 갱신
+- [ ] `bun run test` 실행
+- [ ] `bun run pack:dry-run` 실행
+- [ ] Secret, path, 외부 전달 동작 재검토
+
+## 기여와 검증
+
+Dependency를 설치합니다.
+
+```bash
+bun install
+```
+
+전체 계약을 검증합니다.
+
+```bash
+bun run test
+bun run pack:dry-run
+go test -race ./internal/worklog ./internal/sources ./internal/safeio ./internal/skill ./internal/cli
+go vet ./...
+git diff --check
+```
+
+사용자 동작을 바꿀 때 SSOT와 두 README를 함께 수정하세요. 외부 전송은 명시적 사용자 선택 없이 추가하지 마세요.
+
+## 라이선스
+
+MIT License를 사용합니다. Package metadata는 `package.json`에서 확인하세요.
